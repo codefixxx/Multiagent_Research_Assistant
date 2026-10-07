@@ -1,0 +1,61 @@
+[project]
+name = "multiagent-research-assistant"
+version = "0.1.0"
+description = "Production-grade multi-agent research assistant with supervisor-worker topology, durable state, hard budgets, and step tracing."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+    { name = "Research Engineering Team" }
+]
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain>=0.2.0",
+    "langchain-core>=0.2.0",
+    "langchain-groq>=0.1.5",
+    "langchain-google-genai>=1.0.5",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.2.0",
+    "httpx>=0.27.0",
+    "trafilatura>=1.8.0",
+    "redis>=5.0.4",
+    "structlog>=24.1.0",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.14.0",
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP"]
+ignore = ["E501"]
+
+[tool.pyright]
+include = ["src", "tests", "scripts"]
+extraPaths = ["."]
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "."
+explicit_package_bases = true
+ignore_missing_imports = true
