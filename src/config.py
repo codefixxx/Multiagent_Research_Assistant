@@ -65,6 +65,13 @@ class Settings(BaseSettings):
     SCRAPER_MAX_WORDS_PER_PAGE: int = Field(default=2500)
     MAX_CITATIONS_PER_DOMAIN: int = Field(default=2)
 
+    # Jina Reader Configuration
+    JINA_API_KEY: str | None = Field(default=None)
+    ENABLE_JINA_FALLBACK: bool = Field(
+        default=True,
+        description="Whether to fall back to Jina Reader (r.jina.ai) when direct scraping is blocked.",
+    )
+
     # Persistence (Redis)
     REDIS_URL: str = "redis://localhost:6379/0"
 

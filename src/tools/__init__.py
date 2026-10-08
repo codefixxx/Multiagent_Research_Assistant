@@ -8,6 +8,7 @@ from src.tools.errors import (
     map_http_status_to_extraction_status,
 )
 from src.tools.evidence_collector import EvidenceCollectionResult, EvidenceCollector
+from src.tools.jina_reader import JinaReaderClient
 from src.tools.scraper import DeepPageScraper, ScrapedDocument
 from src.tools.search import (
     BaseSearchEngine,
@@ -25,6 +26,7 @@ __all__ = [
     "DuckDuckGoSearchClient",
     "EvidenceCollectionResult",
     "EvidenceCollector",
+    "JinaReaderClient",
     "MockSearchClient",
     "MultiSearchClient",
     "ScrapedDocument",
