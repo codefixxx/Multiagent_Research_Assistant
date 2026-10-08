@@ -72,6 +72,13 @@ class Settings(BaseSettings):
         description="Whether to fall back to Jina Reader (r.jina.ai) when direct scraping is blocked.",
     )
 
+    # Developer Community / Hacker News Configuration
+    ENABLE_HACKER_NEWS: bool = Field(
+        default=True,
+        description="Whether to query Hacker News for real-world developer discussions and post-mortems.",
+    )
+    HN_MAX_RESULTS: int = Field(default=2)
+
     # Persistence (Redis)
     REDIS_URL: str = "redis://localhost:6379/0"
 

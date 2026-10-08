@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -34,12 +35,20 @@ class EvidenceCollector:
         search_client: MultiSearchClient | None = None,
         scraper: DeepPageScraper | None = None,
         domain_guard: DomainDiversityGuard | None = None,
+        hn_client: Any = None,
+        enable_hacker_news: bool | None = None,
     ) -> None:
         self.search_client = search_client or MultiSearchClient()
         self.scraper = scraper or DeepPageScraper()
         self.domain_guard = domain_guard or DomainDiversityGuard(
             max_per_domain=settings.MAX_CITATIONS_PER_DOMAIN
         )
+        self.enable_hn = (
+            enable_hacker_news
+            if enable_hacker_news is not None
+            else settings.ENABLE_HACKER_NEWS
+        )
+        self.hn_client = hn_client
 
     async def collect_evidence_for_queries(
         self,
@@ -56,7 +65,10 @@ class EvidenceCollector:
 
         # 1. Execute searches across all provided queries concurrently
         async def _search_query(q: str) -> tuple[list[SearchResult], ExtractionStatus]:
-            return await self.search_client.search(q, max_results=limit)
+            res = await self.search_client.search(q, max_results=limit)
+            if isinstance(res, tuple):
+                return res
+            return res, (ExtractionStatus.SUCCESS if res else ExtractionStatus.NO_RESULTS)
 
         search_tasks = [_search_query(q) for q in queries]
         search_outcomes = await asyncio.gather(*search_tasks, return_exceptions=True)
@@ -138,11 +150,28 @@ class EvidenceCollector:
             "\n---\n".join(sections) if sections else "No usable evidence content extracted."
         )
 
+        # 5. Optionally query and append Hacker News developer community discussions
+        if self.enable_hn and queries:
+            try:
+                from src.tools.hacker_news import HackerNewsClient
+
+                hn = self.hn_client or HackerNewsClient()
+                stories = await hn.search_discussions(queries[0])
+                if stories:
+                    hn_md = hn.format_for_evidence(stories)
+                    if hn_md:
+                        formatted_context += (
+                            f"\n\n---\n## Real-World Developer Discussions (Hacker News)\n{hn_md}"
+                        )
+            except Exception as e:
+                logger.debug("Hacker News fetch skipped", error=str(e))
+
         return EvidenceCollectionResult(
             formatted_context=formatted_context,
             documents=scraped_docs,
             search_results=all_search_results,
-            status=ExtractionStatus.SUCCESS if sections else ExtractionStatus.NO_RESULTS,
+            status=ExtractionStatus.SUCCESS if (sections or self.enable_hn) else ExtractionStatus.NO_RESULTS,
             queries_executed=queries,
             urls_processed=collected_urls,
         )
+
