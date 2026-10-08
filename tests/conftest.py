@@ -12,6 +12,7 @@ from langchain_core.runnables import RunnableLambda
 from src.schemas.finding import ExtractionStatus, FindingRecord, ResearcherOutput
 from src.schemas.plan import ResearchPlan, SubQuestion, SubQuestionStatus
 from src.schemas.report import Citation, ReportSection, ResearchReport
+from src.schemas.review import ReviewEvaluation
 
 
 class MockChatModel(BaseChatModel):
@@ -21,6 +22,7 @@ class MockChatModel(BaseChatModel):
     fixed_plan: ResearchPlan | None = None
     fixed_researcher_output: ResearcherOutput | None = None
     fixed_report: ResearchReport | None = None
+    fixed_review: ReviewEvaluation | None = None
 
     def _generate(
         self,
@@ -126,6 +128,13 @@ class MockChatModel(BaseChatModel):
                             verified_claim="Two-qubit gate fidelities reached 99.9% in trapped-ion systems.",
                         ),
                     ],
+                )
+            elif schema == ReviewEvaluation:
+                parsed = self.fixed_review or ReviewEvaluation(
+                    is_approved=True,
+                    quality_score=0.9,
+                    feedback="Sufficient factual evidence gathered with provenance.",
+                    missing_aspects=[],
                 )
             else:
                 parsed = schema()

@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 
 # Ensure UTF-8 stdout on Windows console
-if sys.platform == "win32":
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
+        getattr(sys.stdout, "reconfigure")(encoding="utf-8")
     except Exception:
         pass
 
@@ -65,7 +65,9 @@ async def main(provider: str, model: str | None, query: str):
             evidence_context=simulated_evidence,
             llm=llm,
         )
-        print(f"   [OK] Researcher succeeded in {r_latency:.1f}ms! (Tokens: {r_tokens.total_tokens})")
+        print(
+            f"   [OK] Researcher succeeded in {r_latency:.1f}ms! (Tokens: {r_tokens.total_tokens})"
+        )
         print(f"   Is Answered: {research_out.is_answered}")
         print(f"   Summary: {research_out.summary}")
         print(f"   Findings extracted ({len(research_out.findings)}):")
@@ -95,7 +97,9 @@ async def main(provider: str, model: str | None, query: str):
         sys.exit(1)
 
     total_tokens = p_tokens.total_tokens + r_tokens.total_tokens + w_tokens.total_tokens
-    print(f"\n[DONE] All 3 Specialists passed execution with {provider.upper()}! Total tokens: {total_tokens}")
+    print(
+        f"\n[DONE] All 3 Specialists passed execution with {provider.upper()}! Total tokens: {total_tokens}"
+    )
 
 
 if __name__ == "__main__":
