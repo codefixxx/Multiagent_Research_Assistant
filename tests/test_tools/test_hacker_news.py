@@ -5,7 +5,7 @@ import pytest
 
 from src.tools.evidence_collector import EvidenceCollector
 from src.tools.hacker_news import HackerNewsClient, HackerNewsStory
-from src.tools.search import MockSearchClient
+from src.tools.search import MockSearchClient, MultiSearchClient
 
 
 def test_hn_story_model():
@@ -144,7 +144,7 @@ async def test_evidence_collector_hn_integration():
             return "### Developer Community Insight: Cascading timeouts warning"
 
     collector = EvidenceCollector(
-        search_client=MockSearchClient(),
+        search_client=MultiSearchClient(mock_client=MockSearchClient()),
         hn_client=DummyHNClient(),
         enable_hacker_news=True,
     )
