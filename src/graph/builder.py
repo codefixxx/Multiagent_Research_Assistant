@@ -15,6 +15,7 @@ from src.agents.planner import plan_research
 from src.agents.researcher import research_subquestion
 from src.agents.reviewer import evaluate_research
 from src.agents.writer import write_report
+from src.config import settings
 from src.core.logger import logger
 from src.core.telemetry import TokenUsage
 from src.graph.state import ResearchState
@@ -24,6 +25,7 @@ from src.graph.supervisor import (
 )
 from src.schemas.report import Citation, ReportSection, ResearchReport
 from src.schemas.trace import StepTrace
+from src.tools.evidence_collector import EvidenceCollector
 
 
 def create_step_trace(
@@ -46,7 +48,10 @@ def create_step_trace(
     )
 
 
-def build_research_graph(llm: BaseChatModel | None = None) -> StateGraph:
+def build_research_graph(
+    llm: BaseChatModel | None = None,
+    evidence_collector: EvidenceCollector | None = None,
+) -> StateGraph:
     """Build and return an uncompiled StateGraph for the research system."""
 
     async def planner_node(state: ResearchState) -> dict[str, Any]:
@@ -95,14 +100,35 @@ def build_research_graph(llm: BaseChatModel | None = None) -> StateGraph:
             is_revision=bool(feedback),
         )
 
-        # Context evidence incorporating any feedback from reviewer
-        evidence = (
-            f"Sub-question target: {sub_question.question}\n"
-            f"Rationale: {sub_question.rationale}\n"
-            f"Search Queries: {', '.join(sub_question.search_queries)}\n"
+        # Collect live web evidence with domain diversity and deep scraping
+        collector = evidence_collector
+        is_mock_llm = type(llm).__name__ == "MockChatModel"
+        if collector is None:
+            if is_mock_llm or settings.LLM_PROVIDER == "mock" or settings.SEARCH_ENGINE == "mock":
+                from src.tools.search import MockSearchClient, MultiSearchClient
+
+                collector = EvidenceCollector(
+                    search_client=MultiSearchClient(mock_client=MockSearchClient())
+                )
+            else:
+                collector = EvidenceCollector()
+
+        queries = (
+            list(sub_question.search_queries)
+            if sub_question.search_queries
+            else [sub_question.question]
         )
         if feedback:
-            evidence += f"\nReviewer Revision Guidance: {feedback}\n"
+            queries.append(f"{sub_question.question} {feedback[:60]}")
+
+        # Deep scrape is skipped for mock llm runs to ensure tests remain instantaneous
+        evidence_res = await collector.collect_evidence_for_queries(
+            queries=queries,
+            deep_scrape=not is_mock_llm,
+        )
+        evidence = evidence_res.formatted_context
+        if feedback:
+            evidence += f"\n\nReviewer Revision Guidance: {feedback}\n"
 
         output, tokens, latency = await research_subquestion(
             sub_question=sub_question,
@@ -317,9 +343,13 @@ def build_research_graph(llm: BaseChatModel | None = None) -> StateGraph:
     return builder
 
 
-def compile_research_graph(llm: BaseChatModel | None = None, checkpointer: Any = None):
+def compile_research_graph(
+    llm: BaseChatModel | None = None,
+    checkpointer: Any = None,
+    evidence_collector: EvidenceCollector | None = None,
+):
     """Build and compile the research graph ready for execution."""
-    builder = build_research_graph(llm=llm)
+    builder = build_research_graph(llm=llm, evidence_collector=evidence_collector)
     return builder.compile(checkpointer=checkpointer)
 
 
