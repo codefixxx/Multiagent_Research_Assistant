@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+from typing import Any
 
 import httpx
 from pydantic import BaseModel, Field
@@ -43,10 +44,18 @@ class DeepPageScraper:
         timeout: float | None = None,
         max_words_per_page: int | None = None,
         user_agent: str = DEFAULT_USER_AGENT,
+        enable_jina_fallback: bool | None = None,
+        jina_client: Any = None,
     ) -> None:
         self.timeout = timeout or settings.SCRAPER_TIMEOUT_SECONDS
         self.max_words = max_words_per_page or settings.SCRAPER_MAX_WORDS_PER_PAGE
         self.user_agent = user_agent
+        self.enable_jina_fallback = (
+            enable_jina_fallback
+            if enable_jina_fallback is not None
+            else settings.ENABLE_JINA_FALLBACK
+        )
+        self.jina_client = jina_client
 
     def _extract_title(self, html: str) -> str:
         """Extract title from HTML using regex fallback."""
@@ -110,6 +119,23 @@ class DeepPageScraper:
             # Check HTTP Status Code
             if response.status_code != 200:
                 status = map_http_status_to_extraction_status(response.status_code)
+                if self.enable_jina_fallback and status in (
+                    ExtractionStatus.BLOCKED,
+                    ExtractionStatus.PAYWALLED,
+                    ExtractionStatus.ERROR,
+                ):
+                    logger.info(
+                        "Direct scrape returned error; trying Jina Reader fallback",
+                        url=url,
+                        status_code=response.status_code,
+                    )
+                    from src.tools.jina_reader import JinaReaderClient
+
+                    jina = self.jina_client or JinaReaderClient(max_words=self.max_words)
+                    jina_doc = await jina.read_url(url)
+                    if jina_doc.status == ExtractionStatus.SUCCESS:
+                        return jina_doc
+
                 return ScrapedDocument(
                     url=url,
                     status=status,
@@ -144,6 +170,18 @@ class DeepPageScraper:
                 extracted_text = self._fallback_text_extraction(html_content)
 
             if not extracted_text or not extracted_text.strip():
+                if self.enable_jina_fallback:
+                    logger.info(
+                        "Direct scrape yielded no readable text; trying Jina Reader fallback",
+                        url=url,
+                    )
+                    from src.tools.jina_reader import JinaReaderClient
+
+                    jina = self.jina_client or JinaReaderClient(max_words=self.max_words)
+                    jina_doc = await jina.read_url(url)
+                    if jina_doc.status == ExtractionStatus.SUCCESS:
+                        return jina_doc
+
                 return ScrapedDocument(
                     url=url,
                     title=title,
