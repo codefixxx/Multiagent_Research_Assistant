@@ -11,7 +11,7 @@ from src.core.logger import logger
 from src.schemas.finding import ExtractionStatus
 from src.tools.domain_guard import DomainDiversityGuard
 from src.tools.scraper import DeepPageScraper, ScrapedDocument
-from src.tools.search import MultiSearchClient, SearchResult
+from src.tools.search import BaseSearchEngine, MultiSearchClient, SearchResult
 
 
 class EvidenceCollectionResult(BaseModel):
@@ -32,7 +32,7 @@ class EvidenceCollector:
 
     def __init__(
         self,
-        search_client: MultiSearchClient | None = None,
+        search_client: MultiSearchClient | BaseSearchEngine | None = None,
         scraper: DeepPageScraper | None = None,
         domain_guard: DomainDiversityGuard | None = None,
         hn_client: Any = None,
