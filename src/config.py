@@ -56,6 +56,14 @@ class Settings(BaseSettings):
 
     # Search & Tool Configuration
     TAVILY_API_KEY: str | None = Field(default=None)
+    SEARCH_ENGINE: Literal["auto", "tavily", "duckduckgo", "mock"] = Field(
+        default="auto",
+        description="Search engine to use: 'auto' (Tavily if key present else DDG), 'tavily', 'duckduckgo', or 'mock'",
+    )
+    SEARCH_MAX_RESULTS_PER_QUERY: int = Field(default=5)
+    SCRAPER_TIMEOUT_SECONDS: float = Field(default=6.0)
+    SCRAPER_MAX_WORDS_PER_PAGE: int = Field(default=2500)
+    MAX_CITATIONS_PER_DOMAIN: int = Field(default=2)
 
     # Persistence (Redis)
     REDIS_URL: str = "redis://localhost:6379/0"

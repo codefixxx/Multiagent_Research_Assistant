@@ -121,9 +121,8 @@ async def main(provider: str, model: str | None, query: str):
 
     report = final_state.get("report")
     if report and report.markdown_output:
-        print("\n--- FINAL SYNTHESIZED REPORT PREVIEW ---")
-        preview = report.markdown_output[:600]
-        print(preview + ("\n... [truncated]" if len(report.markdown_output) > 600 else ""))
+        print("\n--- FINAL SYNTHESIZED REPORT ---")
+        print(report.markdown_output)
 
     print(f"\n[DONE] Graph execution completed successfully with {provider.upper()}!")
 
