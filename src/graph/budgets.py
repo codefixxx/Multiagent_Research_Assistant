@@ -55,7 +55,12 @@ def evaluate_budget(
 
     # 1. Check cumulative token ceiling
     tokens = state.get("total_tokens")
-    current_tokens = tokens.total_tokens if tokens else 0
+    if isinstance(tokens, dict):
+        current_tokens = tokens.get("total_tokens", 0)
+    elif tokens:
+        current_tokens = tokens.total_tokens
+    else:
+        current_tokens = 0
     if current_tokens >= effective_limits.max_budget_tokens:
         reason = (
             f"Token budget ceiling exceeded: {current_tokens:,} tokens spent "

@@ -6,7 +6,7 @@ Controls conditional edge routing across the multi-agent graph, enforcing:
 - Clear hand-offs across specialists.
 """
 
-from typing import Literal
+from typing import Any, Literal
 
 from langgraph.graph import END
 
@@ -24,9 +24,29 @@ SupervisorDecision = Literal[
 ]
 
 
+def _unwrap_lc(d: Any) -> Any:
+    if isinstance(d, dict):
+        if d.get("lc") == 2 and "kwargs" in d:
+            return _unwrap_lc(d["kwargs"])
+        return {k: _unwrap_lc(v) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_unwrap_lc(x) for x in d]
+    return d
+
+
+def _normalize_plan(raw_plan: Any) -> Any:
+    if not raw_plan:
+        return None
+    if isinstance(raw_plan, dict):
+        from src.schemas.plan import ResearchPlan
+
+        return ResearchPlan.model_validate(_unwrap_lc(raw_plan))
+    return raw_plan
+
+
 def route_after_planner(state: ResearchState) -> str:
     """Determine the next step after the planner node completes."""
-    plan = state.get("plan")
+    plan = _normalize_plan(state.get("plan"))
     if not plan or not plan.sub_questions:
         logger.error("Planner failed to produce valid sub-questions; routing to failed")
         return "failed"
@@ -61,7 +81,7 @@ def route_after_reviewer(state: ResearchState) -> str:
         )
         return "emergency_writer"
 
-    plan = state.get("plan")
+    plan = _normalize_plan(state.get("plan"))
     if not plan:
         return "failed"
 
@@ -79,19 +99,20 @@ def route_after_reviewer(state: ResearchState) -> str:
         )
         return "researcher"
 
-    # Otherwise, sub-question is either approved OR forced forward by revision cap
-    next_idx = current_idx + 1
-    if next_idx < len(plan.sub_questions):
-        logger.info(
-            "Supervisor advancing to next sub-question",
-            next_sub_question_index=next_idx,
-            total_sub_questions=len(plan.sub_questions),
-        )
-        return "researcher"
+    # All sub-questions completed (or single-question plan completed without active revision)
+    if current_idx >= len(plan.sub_questions) or (
+        len(plan.sub_questions) == 1 and (review_notes is None or revision_count >= 1)
+    ):
+        logger.info("Supervisor routing to writer for final report synthesis")
+        return "writer"
 
-    # All sub-questions completed; proceed to full report writer
-    logger.info("Supervisor routing to writer for final report synthesis")
-    return "writer"
+    # Otherwise, advance to next sub-question
+    logger.info(
+        "Supervisor advancing to next sub-question",
+        next_sub_question_index=current_idx,
+        total_sub_questions=len(plan.sub_questions),
+    )
+    return "researcher"
 
 
 def route_after_writer(state: ResearchState) -> str:
