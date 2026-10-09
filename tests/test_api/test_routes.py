@@ -141,3 +141,25 @@ async def test_cancel_non_running_job_returns_400(client):
     """POST /research/{id}/cancel returns 400 when job is not actively running."""
     response = await client.post("/research/not-running-id-404/cancel")
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_dashboard_endpoint(client):
+    """GET /dashboard and /ui return 200 with HTML content."""
+    resp = await client.get("/dashboard")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers.get("content-type", "")
+    assert "RESEARCH ENGINE" in resp.text
+
+    alias_resp = await client.get("/ui")
+    assert alias_resp.status_code == 200
+    assert "text/html" in alias_resp.headers.get("content-type", "")
+
+
+@pytest.mark.asyncio
+async def test_static_asset_endpoint(client):
+    """GET /static/styles.css returns CSS styles."""
+    resp = await client.get("/static/styles.css")
+    assert resp.status_code == 200
+    assert "text/css" in resp.headers.get("content-type", "")
+    assert "--bg-void" in resp.text
