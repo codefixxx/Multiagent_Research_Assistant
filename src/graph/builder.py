@@ -145,8 +145,8 @@ def build_research_graph(
             "audit_traces": [trace],
         }
 
-    async def researcher_node(payload: dict[str, Any]) -> dict[str, Any]:
-        raw_sq = payload.get("sub_question")
+    async def researcher_node(payload: Any) -> dict[str, Any]:
+        raw_sq = payload.get("sub_question") if isinstance(payload, dict) else getattr(payload, "sub_question", None)
         if raw_sq:
             if isinstance(raw_sq, dict):
                 sub_question = SubQuestion.model_validate(_unwrap_lc(raw_sq))
@@ -490,7 +490,7 @@ def build_research_graph(
 
     # Register nodes
     builder.add_node("planner", planner_node)
-    builder.add_node("researcher", researcher_node)
+    builder.add_node("researcher", researcher_node)  # type: ignore[arg-type]
     builder.add_node("consolidator", consolidator_node)
     builder.add_node("writer", writer_node)
     builder.add_node("emergency_writer", emergency_writer_node)
