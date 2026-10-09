@@ -21,6 +21,8 @@ dependencies = [
     "trafilatura>=1.8.0",
     "duckduckgo_search>=7.0.0",
     "redis>=5.0.4",
+    "langgraph-checkpoint-redis>=0.5.0",
+    "fakeredis[aioredis]>=2.23.0",
     "structlog>=24.1.0",
     "python-dotenv>=1.0.1",
 ]
