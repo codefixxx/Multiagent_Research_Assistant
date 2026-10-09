@@ -47,3 +47,26 @@ async def test_graph_emergency_writer_on_budget_exceeded(mock_llm):
     assert final_state["status"] == "budget_exceeded"
     assert "budget" in final_state["report"].title.lower()
     assert "emergency_writer" in [t.agent_name for t in final_state["audit_traces"]]
+
+
+@pytest.mark.asyncio
+async def test_parallel_fan_out_multi_worker_execution(mock_llm):
+    """Verify that multiple sub-questions fan out concurrently and reduce cleanly into state."""
+    graph = compile_research_graph(llm=mock_llm)
+    initial_state = create_initial_state(
+        query="Investigate distributed consensus in Raft, Paxos, and Zab"
+    )
+
+    final_state = await graph.ainvoke(initial_state)
+
+    assert final_state["status"] == "completed"
+    assert len(final_state["findings"]) >= 2
+    # Verify traces captured planner, parallel researchers, reviewers, and writer
+    agent_names = [t.agent_name for t in final_state["audit_traces"]]
+    assert agent_names.count("planner") == 1
+    assert agent_names.count("researcher") >= 2
+    assert agent_names.count("reviewer") >= 2
+    assert agent_names.count("writer") == 1
+    # Check that final report references multiple findings
+    assert len(final_state["report"].sections) >= 1
+    assert final_state["total_tokens"].total_tokens > 0

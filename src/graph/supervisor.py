@@ -9,6 +9,7 @@ Controls conditional edge routing across the multi-agent graph, enforcing:
 from typing import Any, Literal
 
 from langgraph.graph import END
+from langgraph.types import Send
 
 from src.core.logger import logger
 from src.graph.budgets import evaluate_budget
@@ -17,6 +18,7 @@ from src.graph.state import ResearchState
 SupervisorDecision = Literal[
     "researcher",
     "reviewer",
+    "consolidator",
     "writer",
     "emergency_writer",
     "failed",
@@ -44,19 +46,60 @@ def _normalize_plan(raw_plan: Any) -> Any:
     return raw_plan
 
 
-def route_after_planner(state: ResearchState) -> str:
-    """Determine the next step after the planner node completes."""
+def route_after_planner(state: ResearchState) -> list[Send] | str:
+    """Determine the next step after the planner node completes.
+
+    Spawns concurrent parallel researcher workers using LangGraph's Send API,
+    one worker task per decomposed sub-question.
+    """
     plan = _normalize_plan(state.get("plan"))
     if not plan or not plan.sub_questions:
         logger.error("Planner failed to produce valid sub-questions; routing to failed")
         return "failed"
 
+    run_id = state.get("run_id", "")
+    query = state.get("query", "")
+
     logger.info(
-        "Supervisor routing to researcher",
+        "Supervisor fanning out parallel researchers via Send API",
         total_sub_questions=len(plan.sub_questions),
-        first_sub_question_id=plan.sub_questions[0].id,
+        run_id=run_id,
     )
-    return "researcher"
+    return [
+        Send(
+            "researcher",
+            {
+                "sub_question": sq,
+                "index": idx,
+                "run_id": run_id,
+                "query": query,
+            },
+        )
+        for idx, sq in enumerate(plan.sub_questions)
+    ]
+
+
+def route_after_consolidator(state: ResearchState) -> str:
+    """Evaluate budget and findings after all parallel workers join.
+
+    Routes to emergency writer if token or time budgets were exceeded during
+    parallel research passes, otherwise advances to the writer node.
+    """
+    budget = evaluate_budget(state)
+    if budget.is_exceeded or state.get("status") == "budget_exceeded":
+        logger.warning(
+            "Hard budget exceeded in supervisor; routing to emergency writer",
+            reason=budget.reason if budget.is_exceeded else "Budget limit breached",
+        )
+        return "emergency_writer"
+
+    findings = state.get("findings", [])
+    if not findings and not state.get("plan"):
+        logger.error("No findings gathered and no valid plan; routing to failed")
+        return "failed"
+
+    logger.info("Supervisor routing to writer for final report synthesis")
+    return "writer"
 
 
 def route_after_researcher(state: ResearchState) -> str:
