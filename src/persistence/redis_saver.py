@@ -59,6 +59,104 @@ async def get_redis_client(
     return get_shared_fake_redis()
 
 
+class PipelineProxy:
+    """Proxies a Redis pipeline to emulate JSON commands via standard key-value storage."""
+
+    def __init__(self, pipe: Any) -> None:
+        self._pipe = pipe
+        self._json_get_indices: set[int] = set()
+
+    def json(self) -> Any:
+        proxy = self
+
+        class _PipeJsonShim:
+            def set(self, key: str, path: str, data: Any) -> Any:
+                serialized = json.dumps(data)
+                return proxy._pipe.set(key, serialized)
+
+            def get(self, key: str, *args: Any, **kwargs: Any) -> Any:
+                idx = len(getattr(proxy._pipe, "command_stack", []))
+                proxy._json_get_indices.add(idx)
+                return proxy._pipe.get(key)
+
+        return _PipeJsonShim()
+
+    async def execute(self, *args: Any, **kwargs: Any) -> list[Any]:
+        results = await self._pipe.execute(*args, **kwargs)
+        if not self._json_get_indices:
+            return results
+        new_results = []
+        for i, res in enumerate(results):
+            if i in self._json_get_indices and res is not None:
+                if isinstance(res, (bytes, bytearray)):
+                    res = res.decode("utf-8")
+                try:
+                    new_results.append(json.loads(res))
+                except Exception:
+                    new_results.append(res)
+            else:
+                new_results.append(res)
+        return new_results
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._pipe, name)
+
+
+class RedisJsonShim:
+    """Emulates RedisJSON commands on a standard Redis client using serialized strings."""
+
+    def __init__(self, target: Any) -> None:
+        self._target = target
+
+    async def get(self, key: str, *args: Any, **kwargs: Any) -> Any:
+        val = await self._target.get(key)
+        if not val:
+            return None
+        if isinstance(val, (bytes, bytearray)):
+            val = val.decode("utf-8")
+        data = json.loads(val)
+        if args and args[0] == "$.checkpoint":
+            return [data.get("checkpoint")]
+        return data
+
+    async def set(self, key: str, path: str, data: Any) -> Any:
+        serialized = json.dumps(data)
+        return await self._target.set(key, serialized)
+
+
+class StandardRedisClientProxy:
+    """Transparent proxy adapting standard Redis clients for LangGraph checkpointers."""
+
+    def __init__(self, real_client: Any) -> None:
+        self._real_client = real_client
+        self._json_shim = RedisJsonShim(real_client)
+
+    def json(self) -> Any:
+        return self._json_shim
+
+    def pipeline(self, transaction: bool = False) -> PipelineProxy:
+        pipe = self._real_client.pipeline(transaction=transaction)
+        return PipelineProxy(pipe)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._real_client, name)
+
+
+async def _ensure_redis_json_compatible(client: Any) -> Any:
+    """Ensure the Redis client supports JSON commands, proxying if RedisJSON is unavailable."""
+    if "fakeredis" in client.__class__.__module__:
+        return client
+    try:
+        await client.execute_command("JSON.SET", "__rejson_probe__", "$", "{}")
+        await client.execute_command("DEL", "__rejson_probe__")
+        return client
+    except Exception:
+        logger.debug(
+            "RedisJSON module not detected; enabling standard Redis JSON proxy for LangGraph checkpointer"
+        )
+        return StandardRedisClientProxy(client)
+
+
 async def get_checkpointer(
     redis_client: Any = None,
     redis_url: str | None = None,
@@ -66,15 +164,16 @@ async def get_checkpointer(
 ) -> AsyncShallowRedisSaver:
     """Create and return a LangGraph AsyncShallowRedisSaver.
 
-    Uses AsyncShallowRedisSaver which relies on standard Redis commands
-    rather than RediSearch (FT.SEARCH), ensuring universal compatibility
+    Uses AsyncShallowRedisSaver which adapts to both Redis Stack (with RedisJSON)
+    and standard Redis instances, ensuring universal compatibility
     with standard Redis servers, managed Redis, and in-memory test mocks.
     """
     client = redis_client
     if client is None:
         client = await get_redis_client(redis_url=redis_url, force_fake=force_fake)
 
-    return AsyncShallowRedisSaver(redis_client=client)
+    compat_client = await _ensure_redis_json_compatible(client)
+    return AsyncShallowRedisSaver(redis_client=compat_client)
 
 
 class RedisRunManager:

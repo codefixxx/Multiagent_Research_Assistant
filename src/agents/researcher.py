@@ -18,10 +18,11 @@ Your sole job is to investigate one specific sub-question and extract factual fi
 
 STRICT OPERATIONAL RULES:
 1. Every finding must state a concrete factual claim or statistic directly substantiated by the provided source text.
-2. Every finding must retain the exact source URL and a verifiable snippet from that source.
-3. Skip generic summaries. We need atomic claims that can be cited in a technical report.
-4. Assess whether the sub-question has been adequately answered (`is_answered=True/False`).
-5. Output must strictly conform to the ResearcherOutput schema.
+2. Every finding must retain the exact source URL and a verifiable snippet from that source (maximum 200 characters).
+3. Extract between 2 and 4 high-value, non-redundant findings. Do not extract more than 4 findings.
+4. Skip generic summaries. We need atomic claims that can be cited in a technical report.
+5. Assess whether the sub-question has been adequately answered (`is_answered=True/False`).
+6. Output must strictly conform to the ResearcherOutput schema.
 """
 
 RESEARCHER_HUMAN_PROMPT = """Investigate the following sub-question based on the evidence provided:

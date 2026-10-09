@@ -1,6 +1,6 @@
 """FastAPI application entrypoint and lifespan management."""
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -15,7 +15,7 @@ from src.persistence.redis_saver import get_redis_client
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown lifecycles."""
     logger.info("Initializing Multi-Agent Research Assistant API service...")
     try:

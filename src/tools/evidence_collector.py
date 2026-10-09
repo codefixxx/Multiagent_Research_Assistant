@@ -123,6 +123,8 @@ class EvidenceCollector:
             doc = doc_map.get(res.url)
             if doc and doc.raw_text.strip():
                 content_text = doc.raw_text.strip()
+                if len(content_text) > 1500:
+                    content_text = content_text[:1497] + "..."
                 source_kind = "Deep Webpage Content"
                 title = doc.title or res.title
             else:
@@ -143,6 +145,8 @@ class EvidenceCollector:
                 f"{content_text}\n"
             )
             item_num += 1
+            if len(sections) >= 5:
+                break
 
         formatted_context = (
             "\n---\n".join(sections) if sections else "No usable evidence content extracted."

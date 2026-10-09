@@ -71,7 +71,7 @@ def get_chat_model(
             api_key=groq_key,
             model=active_model,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_tokens=max_tokens or 4096,
         )
 
     elif target_provider == "gemini":
