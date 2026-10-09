@@ -84,8 +84,8 @@ def get_chat_model(
             model=active_model,
             temperature=temperature,
             max_output_tokens=max_tokens,
-            timeout=30.0,
-            max_retries=2,
+            timeout=60.0,
+            max_retries=3,
         )
 
     elif target_provider == "mock":

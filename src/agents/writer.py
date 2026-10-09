@@ -40,12 +40,15 @@ def format_findings_for_writer(findings: list[FindingRecord]) -> str:
 
     lines = []
     for i, finding in enumerate(findings, start=1):
+        snippet = finding.snippet.strip()
+        if len(snippet) > 300:
+            snippet = snippet[:297] + "..."
         lines.append(
             f"Citation ID: [cite_{i}]\n"
             f"- SubQuestion: {finding.sub_question_id}\n"
             f"- Source URL: {finding.source_url}\n"
             f"- Claim: {finding.claim}\n"
-            f"- Source Snippet: {finding.snippet}\n"
+            f"- Source Snippet: {snippet}\n"
         )
     return "\n".join(lines)
 

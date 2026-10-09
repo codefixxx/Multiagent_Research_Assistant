@@ -45,10 +45,23 @@ class ResearchJobService:
         self.default_llm = llm
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
 
-    async def initialize(self) -> None:
-        """Initialize Redis connection and dependencies if not already supplied."""
-        if self.run_manager is None:
+    async def initialize(self, force_new: bool = False) -> None:
+        """Initialize Redis connection and dependencies if not already supplied or loop changed."""
+        is_stale = False
+        try:
+            curr_loop = asyncio.get_running_loop()
+            saved_loop = getattr(self, "_current_loop", None)
+            if saved_loop is not None and (saved_loop is not curr_loop or saved_loop.is_closed()):
+                is_stale = True
+        except Exception:
+            is_stale = True
+
+        if self.run_manager is None or force_new or is_stale:
             client = await get_redis_client()
+            try:
+                self._current_loop = asyncio.get_running_loop()
+            except Exception:
+                self._current_loop = None
             self.run_manager = RedisRunManager(client)
             self.idempotency_cache = NodeIdempotencyCache(client)
             self.checkpointer = await get_checkpointer(client)
@@ -60,8 +73,7 @@ class ResearchJobService:
         llm_override: BaseChatModel | None = None,
     ) -> None:
         """Schedule and launch a research job in a detached background asyncio task."""
-        if not self.run_manager:
-            await self.initialize()
+        await self.initialize()
 
         assert self.run_manager is not None
         # Initialize run metadata in Redis
@@ -314,8 +326,7 @@ class ResearchJobService:
 
     async def get_status(self, run_id: str) -> ResearchStatusResponse | None:
         """Fetch current status and report (if completed) for a given run ID."""
-        if not self.run_manager:
-            await self.initialize()
+        await self.initialize()
         assert self.run_manager is not None
 
         meta = await self.run_manager.get_run_metadata(run_id)
@@ -364,8 +375,7 @@ class ResearchJobService:
 
     async def get_audit_trace(self, run_id: str) -> AuditTraceResponse | None:
         """Retrieve the complete audit trail and step-by-step metrics for a run."""
-        if not self.run_manager:
-            await self.initialize()
+        await self.initialize()
         assert self.run_manager is not None
 
         raw_audit = await self.run_manager.get_audit_log(run_id)
