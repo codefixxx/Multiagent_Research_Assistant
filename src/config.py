@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     HN_MAX_RESULTS: int = Field(default=2)
 
     # Persistence (Redis)
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str = "redis://127.0.0.1:6379/0"
 
     # Production Budget & Guardrails
     MAX_SUB_QUESTIONS: int = 4
