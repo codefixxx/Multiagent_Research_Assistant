@@ -44,9 +44,7 @@ class EvidenceCollector:
             max_per_domain=settings.MAX_CITATIONS_PER_DOMAIN
         )
         self.enable_hn = (
-            enable_hacker_news
-            if enable_hacker_news is not None
-            else settings.ENABLE_HACKER_NEWS
+            enable_hacker_news if enable_hacker_news is not None else settings.ENABLE_HACKER_NEWS
         )
         self.hn_client = hn_client
 
@@ -170,8 +168,9 @@ class EvidenceCollector:
             formatted_context=formatted_context,
             documents=scraped_docs,
             search_results=all_search_results,
-            status=ExtractionStatus.SUCCESS if (sections or self.enable_hn) else ExtractionStatus.NO_RESULTS,
+            status=ExtractionStatus.SUCCESS
+            if (sections or self.enable_hn)
+            else ExtractionStatus.NO_RESULTS,
             queries_executed=queries,
             urls_processed=collected_urls,
         )
-

@@ -15,7 +15,9 @@ def test_hn_story_model():
         hn_url="https://news.ycombinator.com/item?id=12345",
         points=142,
         num_comments=88,
-        comments=["We migrated 50TB and query planner improvements in Postgres were night and day."],
+        comments=[
+            "We migrated 50TB and query planner improvements in Postgres were night and day."
+        ],
     )
     assert story.story_id == "12345"
     assert story.points == 142
@@ -26,7 +28,7 @@ def test_strip_html():
     client = HackerNewsClient()
     raw = "<p>This is <i>awesome</i> &amp; &quot;reliable&quot; &#x27;fast&#x27; &gt; 100.</p>"
     clean = client._strip_html(raw)
-    assert clean == 'This is awesome & "reliable" \'fast\' > 100.'
+    assert clean == "This is awesome & \"reliable\" 'fast' > 100."
 
 
 @pytest.mark.asyncio
@@ -136,7 +138,9 @@ async def test_evidence_collector_hn_integration():
                     hn_url="https://news.ycombinator.com/item?id=555",
                     points=200,
                     num_comments=50,
-                    comments=["Cascading timeouts without circuit breakers took down the entire cluster."],
+                    comments=[
+                        "Cascading timeouts without circuit breakers took down the entire cluster."
+                    ],
                 )
             ]
 

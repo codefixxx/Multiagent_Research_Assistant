@@ -161,7 +161,7 @@ class HackerNewsClient:
             if story.comments:
                 block += "- **Top Engineering Perspectives / Commentary:**\n"
                 for c in story.comments:
-                    block += f"  > \"{c}\"\n"
+                    block += f'  > "{c}"\n'
             else:
                 block += "- **Top Engineering Perspectives:** (No top comments recorded)\n"
 
