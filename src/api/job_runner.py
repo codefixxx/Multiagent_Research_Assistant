@@ -5,6 +5,7 @@ import time
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.runnables import RunnableConfig
 
 from src.api.events import EventBroadcaster, broadcaster
 from src.core.logger import logger
@@ -116,7 +117,7 @@ class ResearchJobService:
         )
 
         initial_state = create_initial_state(query=request.query, run_id=run_id)
-        config: dict[str, Any] = {"configurable": {"thread_id": run_id}}
+        config: RunnableConfig = {"configurable": {"thread_id": run_id}}
 
         merged_state: dict[str, Any] = dict(initial_state)
 
