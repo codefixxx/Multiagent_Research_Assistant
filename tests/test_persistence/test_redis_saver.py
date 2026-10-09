@@ -84,7 +84,11 @@ async def test_node_idempotency_cache():
     run_id = "test-run-202"
     node_name = "researcher"
     payload = {"sub_question_id": "sq-1", "query": "Raft vs Paxos"}
-    output = {"findings": [{"claim": "Raft decomposes consensus into leader election and log replication."}]}
+    output = {
+        "findings": [
+            {"claim": "Raft decomposes consensus into leader election and log replication."}
+        ]
+    }
 
     # Initial miss
     miss = await cache.get(run_id, node_name, payload)
@@ -94,4 +98,7 @@ async def test_node_idempotency_cache():
     await cache.set(run_id, node_name, payload, output)
     hit = await cache.get(run_id, node_name, payload)
     assert hit is not None
-    assert hit["findings"][0]["claim"] == "Raft decomposes consensus into leader election and log replication."
+    assert (
+        hit["findings"][0]["claim"]
+        == "Raft decomposes consensus into leader election and log replication."
+    )

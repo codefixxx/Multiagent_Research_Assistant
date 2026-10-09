@@ -146,6 +146,12 @@ class RedisRunManager:
         data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         return json.loads(data_str)
 
+    def _report_key(self, run_id: str) -> str:
+        return f"research:run:{run_id}:report"
+
+    def _trace_key(self, run_id: str) -> str:
+        return f"research:run:{run_id}:trace"
+
     async def record_completed_step(
         self,
         run_id: str,
@@ -153,11 +159,13 @@ class RedisRunManager:
         step_number: int,
     ) -> None:
         """Append a completed step to the run's audit trail."""
-        step_record = json.dumps({
-            "node": node_name,
-            "step": step_number,
-            "timestamp": datetime.now(UTC).isoformat(),
-        })
+        step_record = json.dumps(
+            {
+                "node": node_name,
+                "step": step_number,
+                "timestamp": datetime.now(UTC).isoformat(),
+            }
+        )
         await self.redis.rpush(self._steps_key(run_id), step_record)
 
     async def get_step_history(self, run_id: str) -> list[dict[str, Any]]:
@@ -169,9 +177,42 @@ class RedisRunManager:
             history.append(json.loads(item_str))
         return history
 
+    async def save_report(self, run_id: str, report_data: dict[str, Any] | str) -> None:
+        """Persist the finalized research report in Redis."""
+        payload = (
+            report_data if isinstance(report_data, str) else json.dumps(report_data, default=str)
+        )
+        await self.redis.set(self._report_key(run_id), payload)
+
+    async def get_report(self, run_id: str) -> dict[str, Any] | None:
+        """Retrieve the persisted report for a given run ID."""
+        raw = await self.redis.get(self._report_key(run_id))
+        if not raw:
+            return None
+        data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        return json.loads(data_str)
+
+    async def save_audit_log(self, run_id: str, audit_data: dict[str, Any] | str) -> None:
+        """Persist the full audit log in Redis."""
+        payload = audit_data if isinstance(audit_data, str) else json.dumps(audit_data, default=str)
+        await self.redis.set(self._trace_key(run_id), payload)
+
+    async def get_audit_log(self, run_id: str) -> dict[str, Any] | None:
+        """Retrieve the full audit log for a given run ID."""
+        raw = await self.redis.get(self._trace_key(run_id))
+        if not raw:
+            return None
+        data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        return json.loads(data_str)
+
     async def clear_run(self, run_id: str) -> None:
-        """Purge metadata and step records for a given run."""
-        await self.redis.delete(self._meta_key(run_id), self._steps_key(run_id))
+        """Purge metadata, step records, report, and audit records for a given run."""
+        await self.redis.delete(
+            self._meta_key(run_id),
+            self._steps_key(run_id),
+            self._report_key(run_id),
+            self._trace_key(run_id),
+        )
 
 
 class NodeIdempotencyCache:

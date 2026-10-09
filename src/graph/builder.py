@@ -90,7 +90,6 @@ def _normalize_findings(raw_findings: Any) -> list[FindingRecord]:
     return res
 
 
-
 def build_research_graph(
     llm: BaseChatModel | None = None,
     evidence_collector: EvidenceCollector | None = None,
@@ -189,7 +188,11 @@ def build_research_graph(
             collector = evidence_collector
             is_mock_llm = "mock" in type(llm).__name__.lower()
             if collector is None:
-                if is_mock_llm or settings.LLM_PROVIDER == "mock" or settings.SEARCH_ENGINE == "mock":
+                if (
+                    is_mock_llm
+                    or settings.LLM_PROVIDER == "mock"
+                    or settings.SEARCH_ENGINE == "mock"
+                ):
                     from src.tools.search import MockSearchClient, MultiSearchClient
 
                     collector = EvidenceCollector(

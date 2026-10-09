@@ -41,7 +41,9 @@ class ControlledCrashModel(MockChatModel):
             if schema == ResearcherOutput:
                 self.researcher_calls += 1
                 if self.should_crash and self.researcher_calls == 2:
-                    raise CrashTriggerError("WORKER CRASH: Process terminated midway through sub-question 2!")
+                    raise CrashTriggerError(
+                        "WORKER CRASH: Process terminated midway through sub-question 2!"
+                    )
                 return await base_runnable.ainvoke(messages)
             return await base_runnable.ainvoke(messages)
 
@@ -111,7 +113,9 @@ async def test_crash_resumption_from_redis_checkpoint():
     saved_state = await graph_v1.aget_state(config)
     assert saved_state is not None
     assert saved_state.values.get("plan") is not None
-    assert len(saved_state.values.get("findings", [])) >= 1, "Findings from step 1 must be safely persisted"
+    assert len(saved_state.values.get("findings", [])) >= 1, (
+        "Findings from step 1 must be safely persisted"
+    )
     # The next node to execute should be researcher
     assert "researcher" in saved_state.next
 
@@ -136,7 +140,9 @@ async def test_crash_resumption_from_redis_checkpoint():
 
     # Assertions on post-resumption behavior:
     # 1. Planner was NOT re-executed in the new worker!
-    assert healed_llm.planner_calls == 0, "Planner must NOT re-execute upon resumption from checkpoint"
+    assert healed_llm.planner_calls == 0, (
+        "Planner must NOT re-execute upon resumption from checkpoint"
+    )
 
     # 2. Resumed run completed successfully
     assert resumed_result["status"] == "completed"
