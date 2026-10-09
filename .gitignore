@@ -41,7 +41,8 @@ coverage.xml
 *.cover
 *.py,cover
 
-# IDE and OS files
+# IDE, Agent, and OS files
+.agent/
 .vscode/
 .idea/
 *.swp
@@ -49,3 +50,6 @@ coverage.xml
 *~
 .DS_Store
 Thumbs.db
+
+# Live test report outputs
+scripts/live_report_*.json
