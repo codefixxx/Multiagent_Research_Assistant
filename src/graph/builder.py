@@ -18,12 +18,15 @@ from src.agents.writer import write_report
 from src.config import settings
 from src.core.logger import logger
 from src.core.telemetry import TokenUsage
+from src.graph.budgets import evaluate_budget
 from src.graph.state import ResearchState
 from src.graph.supervisor import (
+    route_after_consolidator,
     route_after_planner,
     route_after_reviewer,
 )
 from src.schemas.finding import FindingRecord
+from src.schemas.plan import ResearchPlan, SubQuestion
 from src.schemas.report import Citation, ReportSection, ResearchReport
 from src.schemas.trace import StepTrace
 from src.tools.evidence_collector import EvidenceCollector
@@ -99,15 +102,12 @@ def build_research_graph(
     """Build and return an uncompiled StateGraph for the research system."""
 
     async def planner_node(state: ResearchState) -> dict[str, Any]:
-        step = state.get("step_count", 0) + 1
+        step = 1
         query = state.get("query", "")
         run_id = state.get("run_id", "")
         logger.info("Executing Planner node", step=step, query=query)
 
         plan, tokens, latency = await plan_research(query=query, llm=llm)
-
-        cum_tokens = _normalize_tokens(state.get("total_tokens"))
-        cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
 
         trace = create_step_trace(
             step_number=step,
@@ -125,7 +125,7 @@ def build_research_graph(
                     status="researching",
                     current_node="planner",
                     step_count=step,
-                    total_tokens=cum_tokens.total_tokens,
+                    total_tokens=tokens.total_tokens,
                 )
                 await run_manager.record_completed_step(
                     run_id=run_id,
@@ -140,38 +140,70 @@ def build_research_graph(
             "current_sub_question_index": 0,
             "revision_count": 0,
             "status": "researching",
-            "step_count": step,
-            "total_tokens": cum_tokens,
-            "audit_traces": state.get("audit_traces", []) + [trace],
+            "step_count": 1,
+            "total_tokens": tokens,
+            "audit_traces": [trace],
         }
 
-    async def researcher_node(state: ResearchState) -> dict[str, Any]:
-        step = state.get("step_count", 0) + 1
-        plan = _normalize_plan(state.get("plan"))
-        if not plan:
-            return {"status": "failed", "error_message": "Missing research plan in researcher node"}
+    async def researcher_node(payload: dict[str, Any]) -> dict[str, Any]:
+        raw_sq = payload.get("sub_question")
+        if raw_sq:
+            if isinstance(raw_sq, dict):
+                sub_question = SubQuestion.model_validate(_unwrap_lc(raw_sq))
+            else:
+                sub_question = raw_sq
+            idx = payload.get("index", 0)
+            query = payload.get("query", "")
+            run_id = payload.get("run_id", "")
+        else:
+            plan = _normalize_plan(payload.get("plan"))
+            if not plan:
+                return {"status": "failed", "error_message": "Missing research plan in worker"}
+            idx = payload.get("current_sub_question_index", 0)
+            sub_question = plan.sub_questions[idx]
+            query = payload.get("query", "")
+            run_id = payload.get("run_id", "")
 
-        idx = state.get("current_sub_question_index", 0)
-        sub_question = plan.sub_questions[idx]
-        feedback = state.get("review_feedback")
+        step_res = 2 + (idx * 2)
+        step_rev = 3 + (idx * 2)
 
         logger.info(
-            "Executing Researcher node",
-            step=step,
+            "Executing parallel Researcher worker",
             sub_question_id=sub_question.id,
-            is_revision=bool(feedback),
+            worker_index=idx,
         )
 
-        run_id = state.get("run_id", "")
-        findings: list[FindingRecord] = []
-        is_answered: bool = True
-        tokens = TokenUsage()
-        latency = 0.0
+        worker_tokens = TokenUsage()
+        traces: list[StepTrace] = []
+        worker_steps = 0
 
+        # 1. Evidence gathering & Researcher pass
+        collector = evidence_collector
+        is_mock_llm = "mock" in type(llm).__name__.lower()
+        if collector is None:
+            if (
+                is_mock_llm
+                or settings.LLM_PROVIDER == "mock"
+                or settings.SEARCH_ENGINE == "mock"
+            ):
+                from src.tools.search import MockSearchClient, MultiSearchClient
+
+                collector = EvidenceCollector(
+                    search_client=MultiSearchClient(mock_client=MockSearchClient())
+                )
+            else:
+                collector = EvidenceCollector()
+
+        queries = (
+            list(sub_question.search_queries)
+            if sub_question.search_queries
+            else [sub_question.question]
+        )
+
+        # Check idempotency cache
         cache_payload = {
             "sub_question_id": sub_question.id,
             "question": sub_question.question,
-            "feedback": feedback,
         }
         cached_result = None
         if idempotency_cache and run_id:
@@ -181,43 +213,18 @@ def build_research_graph(
                 logger.debug("Idempotency cache lookup failed", error=str(e))
 
         if cached_result and "findings" in cached_result:
-            logger.info("Researcher idempotency cache hit", sub_question_id=sub_question.id)
+            logger.info("Researcher worker idempotency cache hit", sub_question_id=sub_question.id)
             findings = [FindingRecord.model_validate(f) for f in cached_result["findings"]]
             is_answered = cached_result.get("is_answered", True)
+            res_tokens = TokenUsage()
+            res_latency = 0.0
         else:
-            collector = evidence_collector
-            is_mock_llm = "mock" in type(llm).__name__.lower()
-            if collector is None:
-                if (
-                    is_mock_llm
-                    or settings.LLM_PROVIDER == "mock"
-                    or settings.SEARCH_ENGINE == "mock"
-                ):
-                    from src.tools.search import MockSearchClient, MultiSearchClient
-
-                    collector = EvidenceCollector(
-                        search_client=MultiSearchClient(mock_client=MockSearchClient())
-                    )
-                else:
-                    collector = EvidenceCollector()
-
-            queries = (
-                list(sub_question.search_queries)
-                if sub_question.search_queries
-                else [sub_question.question]
-            )
-            if feedback:
-                queries.append(f"{sub_question.question} {feedback[:60]}")
-
             evidence_res = await collector.collect_evidence_for_queries(
                 queries=queries,
                 deep_scrape=not is_mock_llm,
             )
             evidence = evidence_res.formatted_context
-            if feedback:
-                evidence += f"\n\nReviewer Revision Guidance: {feedback}\n"
-
-            output, tokens, latency = await research_subquestion(
+            output, res_tokens, res_latency = await research_subquestion(
                 sub_question=sub_question,
                 evidence_context=evidence,
                 llm=llm,
@@ -239,128 +246,139 @@ def build_research_graph(
                 except Exception as e:
                     logger.debug("Idempotency cache write failed", error=str(e))
 
-        cum_tokens = _normalize_tokens(state.get("total_tokens"))
-        cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
-
-        trace = create_step_trace(
-            step_number=step,
+        worker_tokens.add(
+            res_tokens.prompt_tokens,
+            res_tokens.completion_tokens,
+            res_tokens.estimated_cost_usd,
+        )
+        worker_steps += 1
+        trace_res = create_step_trace(
+            step_number=step_res,
             agent_name="researcher",
-            input_data={"sub_question_id": sub_question.id, "has_feedback": bool(feedback)},
+            input_data={"sub_question_id": sub_question.id},
             output_data={"findings_count": len(findings), "is_answered": is_answered},
-            tokens=tokens,
-            latency_ms=latency,
+            tokens=res_tokens,
+            latency_ms=res_latency,
         )
+        traces.append(trace_res)
 
-        if run_manager and run_id:
-            try:
-                await run_manager.update_run_status(
-                    run_id=run_id,
-                    status="reviewing",
-                    current_node="researcher",
-                    step_count=step,
-                    total_tokens=cum_tokens.total_tokens,
-                )
-                await run_manager.record_completed_step(
-                    run_id=run_id,
-                    node_name="researcher",
-                    step_number=step,
-                )
-            except Exception as e:
-                logger.debug("Failed updating run_manager in researcher", error=str(e))
-
-        existing_findings = _normalize_findings(state.get("findings", []))
-        return {
-            "current_sub_question_findings": findings,
-            "findings": existing_findings + findings,
-            "status": "reviewing",
-            "step_count": step,
-            "total_tokens": cum_tokens,
-            "audit_traces": state.get("audit_traces", []) + [trace],
-        }
-
-    async def reviewer_node(state: ResearchState) -> dict[str, Any]:
-        step = state.get("step_count", 0) + 1
-        plan = _normalize_plan(state.get("plan"))
-        if not plan:
-            return {"status": "failed", "error_message": "Missing research plan in reviewer node"}
-
-        idx = state.get("current_sub_question_index", 0)
-        sub_question = plan.sub_questions[idx]
-        findings = _normalize_findings(state.get("current_sub_question_findings", []))
-        revision_count = state.get("revision_count", 0)
-
-        logger.info(
-            "Executing Reviewer node",
-            step=step,
-            sub_question_id=sub_question.id,
-            current_revision_count=revision_count,
-        )
-
-        evaluation, tokens, latency = await evaluate_research(
+        # 2. Reviewer evaluation
+        evaluation, rev_tokens, rev_latency = await evaluate_research(
             sub_question=sub_question,
             findings=findings,
             llm=llm,
         )
-
-        cum_tokens = _normalize_tokens(state.get("total_tokens"))
-        cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
-
-        trace = create_step_trace(
-            step_number=step,
+        worker_tokens.add(
+            rev_tokens.prompt_tokens,
+            rev_tokens.completion_tokens,
+            rev_tokens.estimated_cost_usd,
+        )
+        worker_steps += 1
+        trace_rev = create_step_trace(
+            step_number=step_rev,
             agent_name="reviewer",
             input_data={"sub_question_id": sub_question.id, "findings_count": len(findings)},
             output_data={
                 "is_approved": evaluation.quality_score >= 0.5,
                 "score": evaluation.quality_score,
             },
-            tokens=tokens,
-            latency_ms=latency,
+            tokens=rev_tokens,
+            latency_ms=rev_latency,
+        )
+        traces.append(trace_rev)
+
+        # 3. Single-pass revision gate if reviewer requested revision
+        if not evaluation.is_approved:
+            logger.info(
+                "Worker executing single permitted revision", sub_question_id=sub_question.id
+            )
+            rev_queries = list(queries) + [f"{sub_question.question} {evaluation.feedback[:60]}"]
+            rev_evidence_res = await collector.collect_evidence_for_queries(
+                queries=rev_queries,
+                deep_scrape=not is_mock_llm,
+            )
+            rev_evidence = (
+                rev_evidence_res.formatted_context
+                + f"\n\nReviewer Feedback Guidance: {evaluation.feedback}\n"
+            )
+            rev_output, r2_tokens, r2_latency = await research_subquestion(
+                sub_question=sub_question,
+                evidence_context=rev_evidence,
+                llm=llm,
+            )
+            if rev_output.findings:
+                findings = rev_output.findings
+            worker_tokens.add(
+                r2_tokens.prompt_tokens,
+                r2_tokens.completion_tokens,
+                r2_tokens.estimated_cost_usd,
+            )
+            worker_steps += 1
+            traces.append(
+                create_step_trace(
+                    step_number=step_rev + 1,
+                    agent_name="researcher",
+                    input_data={"sub_question_id": sub_question.id, "revision": True},
+                    output_data={"findings_count": len(findings)},
+                    tokens=r2_tokens,
+                    latency_ms=r2_latency,
+                )
+            )
+
+        if run_manager and run_id:
+            try:
+                await run_manager.record_completed_step(
+                    run_id=run_id,
+                    node_name="researcher",
+                    step_number=step_res,
+                )
+            except Exception as e:
+                logger.debug("Failed updating run_manager in worker", error=str(e))
+
+        return {
+            "findings": findings,
+            "audit_traces": traces,
+            "total_tokens": worker_tokens,
+            "step_count": worker_steps,
+        }
+
+    async def consolidator_node(state: ResearchState) -> dict[str, Any]:
+        findings = _normalize_findings(state.get("findings", []))
+        cum_tokens = _normalize_tokens(state.get("total_tokens"))
+        run_id = state.get("run_id", "")
+        plan = _normalize_plan(state.get("plan"))
+        sub_count = len(plan.sub_questions) if plan else 0
+
+        logger.info(
+            "Consolidator joined all parallel research workers",
+            total_findings=len(findings),
+            total_tokens=cum_tokens.total_tokens,
         )
 
-        run_id = state.get("run_id", "")
+        budget = evaluate_budget(state)
+        new_status = "budget_exceeded" if budget.is_exceeded else "writing"
+
         if run_manager and run_id:
             try:
                 await run_manager.update_run_status(
                     run_id=run_id,
-                    status="reviewing",
-                    current_node="reviewer",
-                    step_count=step,
+                    status=new_status,
+                    current_node="consolidator",
+                    step_count=state.get("step_count", 0) + 1,
                     total_tokens=cum_tokens.total_tokens,
                 )
                 await run_manager.record_completed_step(
                     run_id=run_id,
-                    node_name="reviewer",
-                    step_number=step,
+                    node_name="consolidator",
+                    step_number=state.get("step_count", 0) + 1,
                 )
             except Exception as e:
-                logger.debug("Failed updating run_manager in reviewer", error=str(e))
+                logger.debug("Failed updating run_manager in consolidator", error=str(e))
 
-        # Enforce single-pass revision constraint:
-        # If not approved AND revision_count < 1 -> send back for exactly 1 revision pass
-        if not evaluation.is_approved and revision_count < 1:
-            logger.info(
-                "Reviewer requested single permitted revision", sub_question_id=sub_question.id
-            )
-            return {
-                "revision_count": revision_count + 1,
-                "review_feedback": evaluation.feedback,
-                "step_count": step,
-                "total_tokens": cum_tokens,
-                "audit_traces": state.get("audit_traces", []) + [trace],
-            }
-
-        # Otherwise approved or revision cap exhausted: advance sub-question pointer
-        logger.info(
-            "Reviewer approved sub-question or reached revision cap",
-            sub_question_id=sub_question.id,
-        )
         return {
-            "current_sub_question_index": idx + 1,
-            "revision_count": 0,
-            "review_feedback": None,
-            "step_count": step,
-            "total_tokens": cum_tokens,
-            "audit_traces": state.get("audit_traces", []) + [trace],
+            "status": new_status,
+            "current_sub_question_index": sub_count,
+            "step_count": 1,
         }
 
     async def writer_node(state: ResearchState) -> dict[str, Any]:
@@ -375,9 +393,6 @@ def build_research_graph(
             llm=llm,
         )
 
-        cum_tokens = _normalize_tokens(state.get("total_tokens"))
-        cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
-
         trace = create_step_trace(
             step_number=step,
             agent_name="writer",
@@ -388,6 +403,9 @@ def build_research_graph(
         )
 
         run_id = state.get("run_id", "")
+        cum_tokens = _normalize_tokens(state.get("total_tokens"))
+        cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
+
         if run_manager and run_id:
             try:
                 await run_manager.update_run_status(
@@ -408,9 +426,9 @@ def build_research_graph(
         return {
             "report": report,
             "status": "completed",
-            "step_count": step,
-            "total_tokens": cum_tokens,
-            "audit_traces": state.get("audit_traces", []) + [trace],
+            "step_count": 1,
+            "total_tokens": tokens,
+            "audit_traces": [trace],
         }
 
     async def emergency_writer_node(state: ResearchState) -> dict[str, Any]:
@@ -442,7 +460,11 @@ def build_research_graph(
                 )
             ],
             citations=[
-                Citation(citation_id=f"[cite_{i}]", source_url=f.source_url, verified_claim=f.claim)
+                Citation(
+                    citation_id=f"[cite_{i}]",
+                    source_url=f.source_url,
+                    verified_claim=f.claim,
+                )
                 for i, f in enumerate(findings, 1)
             ],
         )
@@ -460,8 +482,8 @@ def build_research_graph(
         return {
             "report": emergency_report,
             "status": "budget_exceeded",
-            "step_count": step,
-            "audit_traces": state.get("audit_traces", []) + [trace],
+            "step_count": 1,
+            "audit_traces": [trace],
         }
 
     builder = StateGraph(ResearchState)  # type: ignore[arg-type]
@@ -469,7 +491,7 @@ def build_research_graph(
     # Register nodes
     builder.add_node("planner", planner_node)
     builder.add_node("researcher", researcher_node)
-    builder.add_node("reviewer", reviewer_node)
+    builder.add_node("consolidator", consolidator_node)
     builder.add_node("writer", writer_node)
     builder.add_node("emergency_writer", emergency_writer_node)
 
@@ -483,12 +505,11 @@ def build_research_graph(
             "failed": END,
         },
     )
-    builder.add_edge("researcher", "reviewer")
+    builder.add_edge("researcher", "consolidator")
     builder.add_conditional_edges(
-        "reviewer",
-        route_after_reviewer,
+        "consolidator",
+        route_after_consolidator,
         {
-            "researcher": "researcher",
             "writer": "writer",
             "emergency_writer": "emergency_writer",
             "failed": END,
