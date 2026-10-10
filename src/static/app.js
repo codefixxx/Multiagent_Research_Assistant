@@ -151,14 +151,41 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       eventSource = new EventSource(`/research/${runId}/stream`);
 
-      eventSource.onmessage = (event) => {
+      const onPayload = (event, explicitType) => {
         try {
           const evtData = JSON.parse(event.data);
+          if (explicitType && !evtData.event) {
+            evtData.event = explicitType;
+          }
           handleStreamEvent(evtData);
         } catch (e) {
           console.warn('Failed parsing SSE payload:', event.data);
         }
       };
+
+      eventSource.onmessage = (event) => onPayload(event);
+
+      // Register listener for every named event dispatched by backend
+      const namedEvents = [
+        'job_started',
+        'planner_completed',
+        'plan_created',
+        'researching_subquestion',
+        'finding_extracted',
+        'subquestion_reviewed',
+        'review_complete',
+        'consolidator_completed',
+        'writing_completed',
+        'report_synthesized',
+        'job_completed',
+        'budget_exceeded',
+        'job_failed',
+        'node_start',
+        'node_complete'
+      ];
+      namedEvents.forEach(evtName => {
+        eventSource.addEventListener(evtName, (event) => onPayload(event, evtName));
+      });
 
       eventSource.onerror = () => {
         // Fallback polling will handle data retrieval
@@ -175,9 +202,12 @@ document.addEventListener('DOMContentLoaded', () => {
     eventCountEl.textContent = `${eventCounter} events`;
 
     const evtName = data.event || 'stream';
-    const payload = data.payload || {};
+    const payload = data.payload || data || {};
 
-    if (evtName === 'node_start') {
+    if (evtName === 'job_started') {
+      updateNodeState('planner', 'active');
+      appendLog('SYSTEM', payload.message || 'Investigation started');
+    } else if (evtName === 'node_start') {
       const node = payload.node;
       updateNodeState(node, 'active');
       appendLog(node.toUpperCase(), `Node activated for execution`);
@@ -185,22 +215,46 @@ document.addEventListener('DOMContentLoaded', () => {
       const node = payload.node;
       updateNodeState(node, 'completed');
       appendLog(node.toUpperCase(), `Node completed step`);
-    } else if (evtName === 'plan_created') {
-      const plan = payload.plan || {};
-      const subqs = plan.sub_questions || [];
-      renderWorkerCapsules(subqs);
-      appendLog('PLANNER', `Generated ${subqs.length} targeted sub-questions for parallel dispatch`);
-    } else if (evtName === 'finding_extracted') {
+    } else if (evtName === 'planner_completed' || evtName === 'plan_created') {
+      updateNodeState('planner', 'completed');
+      updateNodeState('consolidator', 'active');
+      const subqs = payload.sub_questions || (payload.plan && payload.plan.sub_questions) || [];
+      if (subqs.length > 0) {
+        renderWorkerCapsules(subqs);
+      }
+      appendLog('PLANNER', `Generated ${payload.sub_questions_count || subqs.length} targeted sub-questions for parallel dispatch`);
+    } else if (evtName === 'researching_subquestion' || evtName === 'finding_extracted') {
       const subqId = payload.sub_question_id || '';
-      appendLog('RESEARCHER', `Extracted evidence fact for ${subqId}`);
-      incrementStat('stat-findings');
-    } else if (evtName === 'review_complete') {
-      const approved = payload.is_approved;
+      if (subqId) updateWorkerActive(subqId);
+      if (payload.total_findings_count) {
+        statFindings.textContent = payload.total_findings_count;
+      } else {
+        incrementStat('stat-findings');
+      }
+      appendLog('RESEARCHER', `Gathered evidence findings${subqId ? ' for ' + subqId : ''}`);
+    } else if (evtName === 'subquestion_reviewed' || evtName === 'review_complete') {
+      const approved = payload.is_revision !== undefined ? !payload.is_revision : Boolean(payload.is_approved);
       const subqId = payload.sub_question_id;
-      updateWorkerReviewBadge(subqId, approved);
-      appendLog('REVIEWER', `Quality evaluation for ${subqId}: ${approved ? 'Approved' : '1x Revision Requested'}`);
-    } else if (evtName === 'report_synthesized') {
-      appendLog('WRITER', 'Report synthesis completed');
+      if (subqId) updateWorkerReviewBadge(subqId, approved);
+      appendLog('REVIEWER', `Quality evaluation for ${subqId || 'worker'}: ${approved ? 'Approved' : '1x Revision Requested'}`);
+    } else if (evtName === 'consolidator_completed') {
+      updateNodeState('consolidator', 'completed');
+      updateNodeState('writer', 'active');
+      if (payload.total_findings_count) {
+        statFindings.textContent = payload.total_findings_count;
+      }
+      appendLog('CONSOLIDATOR', `Joined all parallel research streams into canonical evidence set`);
+    } else if (evtName === 'writing_completed' || evtName === 'report_synthesized') {
+      updateNodeState('writer', 'completed');
+      appendLog('WRITER', 'Technical report synthesis and citation verification completed');
+    } else if (evtName === 'job_completed') {
+      updateNodeState('planner', 'completed');
+      updateNodeState('consolidator', 'completed');
+      updateNodeState('writer', 'completed');
+      if (payload.report) {
+        renderFullReport(payload);
+      }
+      appendLog('SYSTEM', 'Investigation complete. Final dossier rendered.');
     }
   }
 
@@ -218,16 +272,23 @@ document.addEventListener('DOMContentLoaded', () => {
         reconcileProgress(data);
 
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'budget_exceeded') {
-          clearInterval(pollInterval);
-          if (eventSource) eventSource.close();
-          stopTimer();
-          setDispatchingState(false);
-          pipelinePulse.className = 'pulse-indicator';
-
           if (data.status === 'completed') {
-            pipelineStatusText.textContent = 'INVESTIGATION COMPLETE';
-            renderFullReport(data);
+            // ONLY stop polling if the report is actually populated
+            if (data.report && (data.report.title || data.report.markdown_output)) {
+              clearInterval(pollInterval);
+              if (eventSource) eventSource.close();
+              stopTimer();
+              setDispatchingState(false);
+              pipelinePulse.className = 'pulse-indicator';
+              pipelineStatusText.textContent = 'INVESTIGATION COMPLETE';
+              renderFullReport(data);
+            }
           } else {
+            clearInterval(pollInterval);
+            if (eventSource) eventSource.close();
+            stopTimer();
+            setDispatchingState(false);
+            pipelinePulse.className = 'pulse-indicator';
             pipelineStatusText.textContent = `TERMINATED • ${data.status.toUpperCase()}`;
             appendLog('SYSTEM', `Run halted: ${data.error_message || 'Budget or time limit reached'}`);
           }
@@ -235,7 +296,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (e) {
         console.warn('Error polling status:', e);
       }
-    }, 2000);
+    }, 1500);
   }
 
   // 7. Update UI from Status Snapshot
@@ -250,8 +311,26 @@ document.addEventListener('DOMContentLoaded', () => {
       statFindings.textContent = data.findings_count;
     }
 
-    if (data.current_node) {
-      pipelineStatusText.textContent = `ACTIVE NODE: ${data.current_node.toUpperCase()} (${data.progress_pct || 0}%)`;
+    const node = data.current_node;
+    if (node === 'planner') {
+      updateNodeState('planner', 'active');
+    } else if (node === 'researcher') {
+      updateNodeState('planner', 'completed');
+    } else if (node === 'consolidator') {
+      updateNodeState('planner', 'completed');
+      updateNodeState('consolidator', 'active');
+    } else if (node === 'writer') {
+      updateNodeState('planner', 'completed');
+      updateNodeState('consolidator', 'completed');
+      updateNodeState('writer', 'active');
+    } else if (data.status === 'completed' || node === 'done') {
+      updateNodeState('planner', 'completed');
+      updateNodeState('consolidator', 'completed');
+      updateNodeState('writer', 'completed');
+    }
+
+    if (node) {
+      pipelineStatusText.textContent = `ACTIVE NODE: ${node.toUpperCase()} (${data.progress_pct || 0}%)`;
     }
   }
 
@@ -266,6 +345,18 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (node === 'writer') {
       nodeWriter.className = `dag-node node-writer ${state}`;
       statusWriter.textContent = state === 'active' ? 'Drafting Dossier' : 'Finalized';
+    }
+  }
+
+  function updateWorkerActive(subqId) {
+    const badge = document.getElementById(`badge-${subqId}`);
+    const capsule = document.getElementById(`worker-${subqId}`);
+    if (badge) {
+      badge.className = 'worker-badge badge-active';
+      badge.textContent = 'Gathering...';
+    }
+    if (capsule) {
+      capsule.className = 'worker-capsule active';
     }
   }
 
@@ -351,19 +442,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Render with Marked or fallback
     let htmlContent = '';
-    if (window.marked && typeof window.marked.parse === 'function') {
-      htmlContent = window.marked.parse(markdown);
-    } else {
+    try {
+      if (window.marked) {
+        if (typeof window.marked.parse === 'function') {
+          htmlContent = window.marked.parse(markdown);
+        } else if (typeof window.marked === 'function') {
+          htmlContent = window.marked(markdown);
+        }
+      }
+    } catch (err) {
+      console.warn('Marked parsing error:', err);
+    }
+    if (!htmlContent) {
       htmlContent = escapeHtml(markdown).replace(/\n/g, '<br>');
     }
 
     // Transform citation markers [cite_X] into interactive elements
-    htmlContent = htmlContent.replace(/\[cite_(\d+)\]/g, (match, p1) => {
+    htmlContent = htmlContent.replace(/\[cite_(\d+)\]/gi, (match, p1) => {
       const key = `cite_${p1}`;
       return `<button type="button" class="citation-badge" data-key="${key}">[cite_${p1}]</button>`;
     });
 
-    htmlContent = htmlContent.replace(/\[UNVERIFIED_CITATION:\s*(cite_\w+)\]/g, (match, p1) => {
+    htmlContent = htmlContent.replace(/\[UNVERIFIED_CITATION:\s*(cite_\w+)\]/gi, (match, p1) => {
       return `<button type="button" class="citation-badge unverified" data-key="${p1}">[unverified: ${p1}]</button>`;
     });
 
