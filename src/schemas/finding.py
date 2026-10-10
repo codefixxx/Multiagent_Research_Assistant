@@ -30,6 +30,14 @@ class FindingRecord(BaseModel):
     snippet: str = Field(
         description="Direct quote or contextual excerpt from the source webpage demonstrating the claim."
     )
+    verbatim_quote: str = Field(
+        default="",
+        description="Exact continuous quote from the raw document text validating this claim.",
+    )
+    is_deep_link: bool = Field(
+        default=True,
+        description="Whether this source URL points to a deep article/doc subpage rather than a root domain.",
+    )
     retrieval_timestamp: datetime = Field(
         default_factory=lambda: datetime.now(UTC),
         description="UTC timestamp when the evidence was retrieved.",

@@ -24,7 +24,19 @@ from src.schemas.trace import AuditLog, StepTrace
 from src.validators.citation_validator import (
     CitationValidationResult,
     validate_report_citations,
+    validate_report_citations_async,
 )
+
+
+def _unwrap_lc(d: Any) -> Any:
+    """Recursively unwrap LangChain serialized dict structures (lc=2, kwargs)."""
+    if isinstance(d, dict):
+        if d.get("lc") == 2 and "kwargs" in d:
+            return _unwrap_lc(d["kwargs"])
+        return {k: _unwrap_lc(v) for k, v in d.items()}
+    if isinstance(d, list):
+        return [_unwrap_lc(x) for x in d]
+    return d
 
 
 class ResearchJobService:
@@ -145,6 +157,10 @@ class ResearchJobService:
         try:
             async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
                 for node_name, node_output in chunk.items():
+                    # Preserve findings list accumulation across parallel workers
+                    if "findings" in node_output and node_output["findings"]:
+                        existing_findings = merged_state.get("findings", [])
+                        merged_state["findings"] = existing_findings + list(node_output["findings"])
                     merged_state.update(node_output)
 
                     # Dispatch event based on which agent just finished
@@ -163,7 +179,7 @@ class ResearchJobService:
                         )
 
                     elif node_name == "researcher":
-                        findings = node_output.get("findings", [])
+                        findings = merged_state.get("findings", [])
                         new_findings = node_output.get("current_sub_question_findings", [])
                         await self.broadcaster.broadcast(
                             run_id=run_id,
@@ -215,27 +231,47 @@ class ResearchJobService:
                             },
                         )
 
-            # Execution completed
+            # Query canonical state from graph checkpointer to ensure 100% of parallel worker findings are present
+            try:
+                final_snapshot = await graph.aget_state(config)
+                if final_snapshot and final_snapshot.values:
+                    cvals = final_snapshot.values
+                    # Keep existing ResearchReport if already instantiated; otherwise use canonical
+                    if cvals.get("report") and not isinstance(merged_state.get("report"), ResearchReport):
+                        merged_state["report"] = cvals["report"]
+                    if cvals.get("findings"):
+                        merged_state["findings"] = cvals["findings"]
+                    if cvals.get("status"):
+                        merged_state["status"] = cvals["status"]
+            except Exception as e:
+                logger.debug("Failed querying canonical checkpointer state", error=str(e))
+
             final_status = merged_state.get("status", "completed")
             raw_report = merged_state.get("report")
             findings_list = merged_state.get("findings", [])
 
-            # Run Pre-flight Citation Validation
+            # Deserialization & unwrapping if wrapped in LangChain serializations
+            if isinstance(raw_report, dict):
+                raw_report = ResearchReport.model_validate(_unwrap_lc(raw_report))
+
+            findings_obj_list: list[FindingRecord] = []
+            for f in findings_list:
+                if isinstance(f, FindingRecord):
+                    findings_obj_list.append(f)
+                elif isinstance(f, dict):
+                    findings_obj_list.append(FindingRecord.model_validate(_unwrap_lc(f)))
+
+            # Run Pre-flight Citation Validation with live HTTP verification and text fragments
             citation_validation: CitationValidationResult | None = None
             final_report: ResearchReport | None = None
             if raw_report and isinstance(raw_report, ResearchReport):
-                findings_obj_list = [
-                    f if isinstance(f, FindingRecord) else FindingRecord.model_validate(f)
-                    for f in findings_list
-                ]
-                citation_validation = validate_report_citations(
+                citation_validation = await validate_report_citations_async(
                     report=raw_report,
                     findings=findings_obj_list,
                     auto_sanitize=True,
+                    probe_http=True,
                 )
                 final_report = citation_validation.sanitized_report
-            elif isinstance(raw_report, dict):
-                final_report = ResearchReport.model_validate(raw_report)
 
             # Persist Report in Redis
             if final_report is not None:

@@ -27,6 +27,18 @@ class EvidenceCollectionResult(BaseModel):
     urls_processed: list[str] = Field(default_factory=list)
 
 
+def is_deep_url(url: str) -> bool:
+    """Return True if URL points to a specific article/doc subpage, not just a root domain."""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(url)
+        path = parsed.path.strip("/")
+        return bool(path) and path.lower() not in ("index.html", "index.htm")
+    except Exception:
+        return True
+
+
 class EvidenceCollector:
     """Orchestrates search, URL filtering, deep page scraping, and evidence compilation."""
 
@@ -93,9 +105,14 @@ class EvidenceCollector:
                 urls_processed=[],
             )
 
-        # 2. Filter URLs with Domain Diversity Guard
+        # 2. Prioritize deep article/documentation URLs over root landing pages
+        sorted_results = sorted(
+            all_search_results,
+            key=lambda r: (0 if is_deep_url(r.url) else 1),
+        )
+
         unique_urls_to_scrape: list[str] = []
-        for result in all_search_results:
+        for result in sorted_results:
             if result.url and self.domain_guard.record_url(result.url):
                 unique_urls_to_scrape.append(result.url)
                 if len(unique_urls_to_scrape) >= max_pages_to_scrape:
