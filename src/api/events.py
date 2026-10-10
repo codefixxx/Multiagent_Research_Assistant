@@ -30,6 +30,7 @@ class EventBroadcaster:
             "event": event,
             "run_id": run_id,
             "timestamp": datetime.now(UTC).isoformat(),
+            "payload": data,
             **data,
         }
         sse_message = self.format_sse(event, envelope)

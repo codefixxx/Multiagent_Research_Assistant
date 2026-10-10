@@ -168,14 +168,19 @@ class ResearchJobService:
                     # Dispatch event based on which agent just finished
                     if node_name == "planner":
                         plan = node_output.get("plan")
-                        sub_questions_count = len(plan.sub_questions) if plan else 0
+                        sub_questions = getattr(plan, "sub_questions", []) if plan else []
                         await self.broadcaster.broadcast(
                             run_id=run_id,
                             event="planner_completed",
                             data={
                                 "node": "planner",
                                 "status": "researching",
-                                "sub_questions_count": sub_questions_count,
+                                "sub_questions_count": len(sub_questions),
+                                "sub_questions": [
+                                    sq.model_dump(mode="json") if hasattr(sq, "model_dump") else sq
+                                    for sq in sub_questions
+                                ],
+                                "plan": plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan,
                                 "objective": getattr(plan, "objective", ""),
                             },
                         )
@@ -183,12 +188,21 @@ class ResearchJobService:
                     elif node_name == "researcher":
                         findings = merged_state.get("findings", [])
                         new_findings = node_output.get("current_sub_question_findings", [])
+                        if not new_findings and "findings" in node_output:
+                            new_findings = node_output.get("findings", [])
+                        subq_id = None
+                        if new_findings and len(new_findings) > 0:
+                            first_f = new_findings[0]
+                            subq_id = getattr(first_f, "sub_question_id", None) or (
+                                first_f.get("sub_question_id") if isinstance(first_f, dict) else None
+                            )
                         await self.broadcaster.broadcast(
                             run_id=run_id,
                             event="researching_subquestion",
                             data={
                                 "node": "researcher",
-                                "status": "reviewing",
+                                "status": "researching",
+                                "sub_question_id": subq_id,
                                 "new_findings_count": len(new_findings),
                                 "total_findings_count": len(findings),
                             },
@@ -204,6 +218,18 @@ class ResearchJobService:
                                 "node": "reviewer",
                                 "is_revision": is_revision,
                                 "next_sub_question_index": next_idx,
+                            },
+                        )
+
+                    elif node_name == "consolidator":
+                        findings = merged_state.get("findings", [])
+                        await self.broadcaster.broadcast(
+                            run_id=run_id,
+                            event="consolidator_completed",
+                            data={
+                                "node": "consolidator",
+                                "status": "writing",
+                                "total_findings_count": len(findings),
                             },
                         )
 
@@ -324,6 +350,8 @@ class ResearchJobService:
                 data={
                     "status": final_status,
                     "title": final_report.title if final_report else "",
+                    "report": final_report.model_dump(mode="json") if final_report else None,
+                    "findings_count": len(findings_obj_list),
                     "total_tokens": total_tokens.total_tokens,
                     "latency_ms": total_latency,
                     "citations_verified": (
@@ -334,6 +362,7 @@ class ResearchJobService:
                         if citation_validation
                         else 0
                     ),
+                    "citation_validation": citation_validation.model_dump(mode="json") if citation_validation else None,
                 },
             )
             logger.info(
@@ -403,6 +432,16 @@ class ResearchJobService:
         if raw_report:
             report_obj = ResearchReport.model_validate(raw_report)
 
+        findings_count = len(report_obj.citations) if report_obj and report_obj.citations else 0
+        raw_audit = await self.run_manager.get_audit_log(run_id)
+        if raw_audit and isinstance(raw_audit, dict):
+            try:
+                for s in raw_audit.get("steps", []):
+                    if s.get("agent_name") == "researcher":
+                        findings_count = max(findings_count, s.get("output_data", {}).get("findings_count", 0))
+            except Exception:
+                pass
+
         return ResearchStatusResponse(
             run_id=run_id,
             query=meta.get("query", ""),
@@ -411,7 +450,7 @@ class ResearchJobService:
             current_node=current_node,
             step_count=meta.get("step_count", 0),
             total_tokens=meta.get("total_tokens", 0),
-            findings_count=0,
+            findings_count=findings_count,
             report=report_obj,
             error_message=meta.get("error_message"),
             created_at=meta.get("created_at"),
