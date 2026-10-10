@@ -11,6 +11,22 @@ class Citation(BaseModel):
     verified_claim: str = Field(
         description="Specific finding or claim substantiated by this source"
     )
+    anchor_url: str = Field(
+        default="",
+        description="Deep-link URL with browser text-fragment anchor (#:~:text=...) jumping directly to the cited text.",
+    )
+    verbatim_quote: str = Field(
+        default="",
+        description="Direct verbatim excerpt from the source webpage substantiating the claim.",
+    )
+    http_status: int = Field(
+        default=200,
+        description="Verified HTTP status code for this link (e.g., 200).",
+    )
+    is_deep_link: bool = Field(
+        default=True,
+        description="Whether this link points to a specific article/doc subpage rather than a generic root domain.",
+    )
 
 
 class ReportSection(BaseModel):
@@ -37,7 +53,8 @@ class ResearchReport(BaseModel):
         description="Structured thematic sections detailing the findings."
     )
     citations: list[Citation] = Field(
-        description="List of validated citations utilized across all report sections."
+        default_factory=list,
+        description="List of validated citations utilized across all report sections.",
     )
     markdown_output: str = Field(
         default="",
@@ -58,8 +75,10 @@ class ResearchReport(BaseModel):
         if self.citations:
             md_lines.append("## References & Citations")
             for cite in self.citations:
+                target_url = cite.anchor_url or cite.source_url
+                quote_suffix = f" — Quote: \"_{cite.verbatim_quote}_\"" if cite.verbatim_quote else ""
                 md_lines.append(
-                    f"- **{cite.citation_id}**: [{cite.source_url}]({cite.source_url}) - _{cite.verified_claim}_"
+                    f"- **{cite.citation_id}**: [{cite.source_url}]({target_url}) - _{cite.verified_claim}_{quote_suffix}"
                 )
 
         self.markdown_output = "\n".join(md_lines)

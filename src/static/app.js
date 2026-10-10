@@ -320,9 +320,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Index verified citations
     if (report.citations && Array.isArray(report.citations)) {
       report.citations.forEach(c => {
-        citationMap.set(c.citation_id, {
+        const cleanKey = (c.citation_id || '').replace(/[\[\]]/g, '');
+        citationMap.set(cleanKey, {
           source_url: c.source_url,
-          verified_claim: c.verified_claim
+          anchor_url: c.anchor_url || c.source_url,
+          verified_claim: c.verified_claim,
+          verbatim_quote: c.verbatim_quote || '',
+          http_status: c.http_status || 200,
+          is_deep_link: c.is_deep_link
         });
       });
       statCitations.textContent = report.citations.length;
@@ -386,9 +391,10 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderCitationDrawer(citations) {
     citationList.innerHTML = '';
     citations.forEach(c => {
+      const cleanKey = (c.citation_id || '').replace(/[\[\]]/g, '');
       const item = document.createElement('div');
       item.className = 'citation-item';
-      item.dataset.key = c.citation_id;
+      item.dataset.key = cleanKey;
 
       let domain = '';
       try {
@@ -397,13 +403,14 @@ document.addEventListener('DOMContentLoaded', () => {
         domain = c.source_url;
       }
 
+      const statusBadge = c.http_status === 200 ? '<span style="color:var(--accent-emerald);font-size:9px;">[200 OK]</span>' : '';
       item.innerHTML = `
-        <span class="cite-key">${c.citation_id}</span>
-        <span class="cite-domain" title="${escapeHtml(c.source_url)}">${escapeHtml(domain)}</span>
+        <span class="cite-key">[${cleanKey}]</span>
+        <span class="cite-domain" title="${escapeHtml(c.source_url)}">${escapeHtml(domain)} ${statusBadge}</span>
       `;
 
       item.addEventListener('click', () => {
-        showCitationPopover(c.citation_id, item);
+        showCitationPopover(cleanKey, item);
       });
 
       citationList.appendChild(item);
@@ -411,13 +418,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showCitationPopover(key, targetElement) {
-    const citation = citationMap.get(key);
-    popoverKey.textContent = key;
+    const cleanKey = (key || '').replace(/[\[\]]/g, '');
+    const citation = citationMap.get(cleanKey);
+    popoverKey.textContent = `[${cleanKey}]`;
 
     if (citation) {
-      popoverClaim.textContent = citation.verified_claim || 'Verified factual claim from web provenance extraction.';
-      popoverUrl.href = citation.source_url || '#';
-      popoverUrl.textContent = citation.source_url || 'Unknown source';
+      const quoteHtml = citation.verbatim_quote ? `<div style="font-style:italic;color:var(--text-muted);margin-top:6px;border-left:2px solid var(--accent-cyan);padding-left:8px;">"${escapeHtml(citation.verbatim_quote)}"</div>` : '';
+      popoverClaim.innerHTML = `${escapeHtml(citation.verified_claim || 'Verified factual claim from web provenance extraction.')}${quoteHtml}`;
+      const directUrl = citation.anchor_url || citation.source_url;
+      popoverUrl.href = directUrl;
+      popoverUrl.textContent = directUrl;
       popoverUrl.style.display = 'block';
     } else {
       popoverClaim.textContent = 'Unverified reference: Fact was generated without matching scraped ground truth.';

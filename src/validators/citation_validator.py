@@ -5,10 +5,12 @@ in actual FindingRecord objects retrieved during the research phase,
 eliminating hallucinated URLs and phantom reference IDs before delivery.
 """
 
+import asyncio
 import re
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from pydantic import BaseModel, Field
 
 from src.core.logger import logger
@@ -62,6 +64,18 @@ class CitationValidationResult(BaseModel):
     orphaned_citations: list[str] = Field(
         default_factory=list,
         description="Citations declared in the citations list but never referenced in section text.",
+    )
+    live_probed_urls: dict[str, int] = Field(
+        default_factory=dict,
+        description="Map of citation URLs to verified HTTP status codes (e.g. 200).",
+    )
+    dead_urls: list[str] = Field(
+        default_factory=list,
+        description="URLs that returned 404, 500, or were completely unreachable.",
+    )
+    resolved_redirects: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of original URL to final destination URL after following redirects.",
     )
     sanitized_report: ResearchReport = Field(
         description="The report artifact after pruning or flagging hallucinated citations."
@@ -220,6 +234,76 @@ class CitationValidator:
             summary=" ".join(summary_parts),
         )
 
+    async def validate_async(
+        self,
+        report: ResearchReport,
+        findings: list[FindingRecord],
+        auto_sanitize: bool = True,
+        probe_http: bool = True,
+    ) -> CitationValidationResult:
+        """Validate citations and optionally probe live URLs via concurrent HTTP requests.
+
+        Verifies HTTP 200 OK, resolves redirected canonical URLs, and records dead links.
+        """
+        result = self.validate(report=report, findings=findings, auto_sanitize=auto_sanitize)
+
+        if not probe_http or not result.sanitized_report.citations:
+            return result
+
+        # Probe live URLs concurrently
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+        }
+
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True, headers=headers) as client:
+
+            async def _probe_citation(cite: Citation) -> tuple[Citation, int, str]:
+                clean_url = cite.source_url.split("#")[0]
+                try:
+                    resp = await client.head(clean_url)
+                    if resp.status_code in (404, 405, 501):
+                        resp = await client.get(clean_url)
+                    return cite, resp.status_code, str(resp.url)
+                except Exception:
+                    try:
+                        resp = await client.get(clean_url)
+                        return cite, resp.status_code, str(resp.url)
+                    except Exception as err:
+                        logger.warning("HTTP citation probe failed", url=cite.source_url, error=str(err))
+                        return cite, 0, cite.source_url
+
+            tasks = [_probe_citation(c) for c in result.sanitized_report.citations]
+            probed_outcomes = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for outcome in probed_outcomes:
+                if isinstance(outcome, tuple):
+                    cite_obj, status_code, final_url = outcome
+                    cite_obj.http_status = status_code
+                    result.live_probed_urls[cite_obj.source_url] = status_code
+
+                    # If redirected to a canonical URL, update it
+                    if status_code in (200, 201, 204, 301, 302, 304, 403):
+                        clean_final = final_url.split("#")[0]
+                        clean_orig = cite_obj.source_url.split("#")[0]
+                        if clean_final != clean_orig:
+                            result.resolved_redirects[cite_obj.source_url] = clean_final
+                            cite_obj.source_url = clean_final
+                            if cite_obj.anchor_url:
+                                fragment = cite_obj.anchor_url.split("#")[1] if "#" in cite_obj.anchor_url else ""
+                                cite_obj.anchor_url = f"{clean_final}#{fragment}" if fragment else clean_final
+
+                    if status_code in (404, 410):
+                        result.dead_urls.append(cite_obj.source_url)
+                        logger.warning("Dead link detected in citation", citation_id=cite_obj.citation_id, url=cite_obj.source_url)
+
+        # Recompile markdown with resolved canonical URLs
+        result.sanitized_report.compile_markdown()
+        return result
+
 
 def validate_report_citations(
     report: ResearchReport,
@@ -229,3 +313,19 @@ def validate_report_citations(
     """Convenience functional interface for validating report citations."""
     validator = CitationValidator()
     return validator.validate(report=report, findings=findings, auto_sanitize=auto_sanitize)
+
+
+async def validate_report_citations_async(
+    report: ResearchReport,
+    findings: list[FindingRecord],
+    auto_sanitize: bool = True,
+    probe_http: bool = True,
+) -> CitationValidationResult:
+    """Async convenience functional interface for live-probing report citations."""
+    validator = CitationValidator()
+    return await validator.validate_async(
+        report=report,
+        findings=findings,
+        auto_sanitize=auto_sanitize,
+        probe_http=probe_http,
+    )
