@@ -34,6 +34,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    volumes:
+      - ./src:/app/src
     restart: unless-stopped
 
 volumes:
