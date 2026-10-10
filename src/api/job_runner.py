@@ -159,9 +159,11 @@ class ResearchJobService:
                 for node_name, node_output in chunk.items():
                     # Preserve findings list accumulation across parallel workers
                     if "findings" in node_output and node_output["findings"]:
-                        existing_findings = merged_state.get("findings", [])
+                        existing_findings = list(merged_state.get("findings", []))
                         merged_state["findings"] = existing_findings + list(node_output["findings"])
-                    merged_state.update(node_output)
+                    for k, v in node_output.items():
+                        if k != "findings":
+                            merged_state[k] = v
 
                     # Dispatch event based on which agent just finished
                     if node_name == "planner":
@@ -240,7 +242,14 @@ class ResearchJobService:
                     if cvals.get("report") and not isinstance(merged_state.get("report"), ResearchReport):
                         merged_state["report"] = cvals["report"]
                     if cvals.get("findings"):
-                        merged_state["findings"] = cvals["findings"]
+                        existing_urls = {
+                            getattr(f, "source_url", None) or (f.get("source_url") if isinstance(f, dict) else None)
+                            for f in merged_state.get("findings", [])
+                        }
+                        for cf in cvals["findings"]:
+                            cf_url = getattr(cf, "source_url", None) or (cf.get("source_url") if isinstance(cf, dict) else None)
+                            if cf_url not in existing_urls:
+                                merged_state.setdefault("findings", []).append(cf)
                     if cvals.get("status"):
                         merged_state["status"] = cvals["status"]
             except Exception as e:
