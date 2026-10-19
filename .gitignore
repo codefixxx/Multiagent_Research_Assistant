@@ -53,3 +53,8 @@ Thumbs.db
 
 # Live test report outputs
 scripts/live_report_*.json
+
+# Local documentation & roadmaps
+PROJECT_BREAKDOWN.md
+PRODUCTION_ROADMAP.md
+
