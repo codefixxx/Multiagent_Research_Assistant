@@ -207,19 +207,17 @@ class ResearchJobService:
                                 "total_findings_count": len(findings),
                             },
                         )
-
-                    elif node_name == "reviewer":
-                        is_revision = bool(node_output.get("review_feedback"))
-                        next_idx = node_output.get("current_sub_question_index", 0)
-                        await self.broadcaster.broadcast(
-                            run_id=run_id,
-                            event="subquestion_reviewed",
-                            data={
-                                "node": "reviewer",
-                                "is_revision": is_revision,
-                                "next_sub_question_index": next_idx,
-                            },
-                        )
+                        if subq_id:
+                            await self.broadcaster.broadcast(
+                                run_id=run_id,
+                                event="subquestion_reviewed",
+                                data={
+                                    "node": "reviewer",
+                                    "sub_question_id": subq_id,
+                                    "is_approved": True,
+                                    "is_revision": False,
+                                },
+                            )
 
                     elif node_name == "consolidator":
                         findings = merged_state.get("findings", [])
