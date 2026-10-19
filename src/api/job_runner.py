@@ -8,10 +8,12 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 
 from src.api.events import EventBroadcaster, broadcaster
+from src.config import settings
 from src.core.llm import detect_provider, get_chat_model
 from src.core.logger import logger
 from src.core.telemetry import TokenUsage
 from src.graph.builder import _normalize_tokens, compile_research_graph, create_initial_state
+from src.persistence.queue import RedisJobQueue
 from src.persistence.redis_saver import (
     NodeIdempotencyCache,
     RedisRunManager,
@@ -50,12 +52,14 @@ class ResearchJobService:
         idempotency_cache: NodeIdempotencyCache | None = None,
         checkpointer: Any = None,
         llm: BaseChatModel | None = None,
+        queue: RedisJobQueue | None = None,
     ) -> None:
         self.run_manager = run_manager
         self.broadcaster = event_broadcaster or broadcaster
         self.idempotency_cache = idempotency_cache
         self.checkpointer = checkpointer
         self.default_llm = llm
+        self.queue = queue
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
 
     async def initialize(self, force_new: bool = False) -> None:
@@ -78,21 +82,43 @@ class ResearchJobService:
             self.run_manager = RedisRunManager(client)
             self.idempotency_cache = NodeIdempotencyCache(client)
             self.checkpointer = await get_checkpointer(client)
+            self.queue = RedisJobQueue(client)
+            await self.broadcaster.initialize(client)
 
     async def start_job(
         self,
         run_id: str,
         request: ResearchRequest,
         llm_override: BaseChatModel | None = None,
+        mode: str | None = None,
     ) -> None:
-        """Schedule and launch a research job in a detached background asyncio task."""
+        """Schedule and launch a research job (via decoupled Redis queue or in-process task)."""
         await self.initialize()
 
         assert self.run_manager is not None
         # Initialize run metadata in Redis
         await self.run_manager.init_run(run_id=run_id, query=request.query)
 
-        # Notify subscribers that job has been queued
+        effective_mode = mode or settings.WORKER_MODE
+
+        # When running in decoupled mode and not overridden with an in-memory test LLM,
+        # enqueue job payload onto Redis queue for background worker execution (<10ms).
+        if effective_mode == "decoupled" and llm_override is None:
+            assert self.queue is not None
+            await self.queue.enqueue(run_id=run_id, request=request)
+            await self.broadcaster.broadcast(
+                run_id=run_id,
+                event="job_queued",
+                data={
+                    "query": request.query,
+                    "status": "queued",
+                    "message": "Research job queued and dispatched to distributed worker.",
+                },
+            )
+            logger.info("Dispatched research job to Redis queue", run_id=run_id)
+            return
+
+        # Embedded / In-process execution mode:
         await self.broadcaster.broadcast(
             run_id=run_id,
             event="job_queued",
@@ -223,6 +249,19 @@ class ResearchJobService:
 
         try:
             async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
+                if self.queue and await self.queue.is_cancelled(run_id):
+                    logger.warning("Research job cancelled via Redis flag", run_id=run_id)
+                    await self.run_manager.update_run_status(
+                        run_id=run_id,
+                        status="cancelled",
+                        error_message="Job execution cancelled by caller.",
+                    )
+                    await self.broadcaster.broadcast(
+                        run_id=run_id,
+                        event="job_failed",
+                        data={"status": "cancelled", "error": "Job cancelled."},
+                    )
+                    return
                 for node_name, node_output in chunk.items():
                     # Preserve findings list accumulation across parallel workers
                     if "findings" in node_output and node_output["findings"]:
@@ -562,7 +601,9 @@ class ResearchJobService:
         )
 
     async def cancel_job(self, run_id: str) -> bool:
-        """Cancel an in-flight research job if currently running."""
+        """Cancel an in-flight research job (in-process or distributed)."""
+        await self.initialize()
+        cancelled = False
         task = self._active_tasks.get(run_id)
         if task and not task.done():
             task.cancel()
@@ -570,14 +611,41 @@ class ResearchJobService:
                 await task
             except (asyncio.CancelledError, Exception):
                 pass
-            if self.run_manager:
+            cancelled = True
+
+        if self.run_manager:
+            meta = await self.run_manager.get_run_metadata(run_id)
+            if not meta:
+                return cancelled
+            if meta.get("status") in ("planning", "researching", "reviewing", "writing", "queued"):
+                if self.queue:
+                    await self.queue.request_cancel(run_id)
                 await self.run_manager.update_run_status(
                     run_id=run_id,
                     status="cancelled",
                     error_message="Job execution cancelled by caller.",
                 )
-            return True
-        return False
+                await self.broadcaster.broadcast(
+                    run_id=run_id,
+                    event="job_failed",
+                    data={"status": "cancelled", "error": "Job cancelled."},
+                )
+                cancelled = True
+        return cancelled
+
+    async def get_queue_length(self) -> int:
+        """Return the count of pending research jobs in the Redis queue."""
+        await self.initialize()
+        if self.queue:
+            return await self.queue.get_queue_length()
+        return 0
+
+    async def get_active_workers(self) -> list[dict[str, Any]]:
+        """Return active worker nodes with valid heartbeats in Redis."""
+        await self.initialize()
+        if self.queue:
+            return await self.queue.get_active_workers()
+        return []
 
 
 # Global singleton instance

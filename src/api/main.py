@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.api.events import broadcaster
 from src.api.job_runner import job_service
 from src.api.routes import router as research_router
 from src.config import settings
@@ -25,6 +26,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Initializing Multi-Agent Research Assistant API service...")
     try:
         await job_service.initialize()
+        client = await get_redis_client()
+        await broadcaster.initialize(client)
         logger.info("Background job service and Redis persistence initialized.")
     except Exception as e:
         logger.warning("Failed during lifespan initialization, fallback will be used", error=str(e))
@@ -93,11 +96,23 @@ async def health_check() -> dict[str, Any]:
     except Exception:
         redis_healthy = False
 
+    active_workers: list[dict[str, Any]] = []
+    queue_len = 0
+    try:
+        active_workers = await job_service.get_active_workers()
+        queue_len = await job_service.get_queue_length()
+    except Exception:
+        pass
+
     return {
         "status": "healthy",
         "service": "multiagent-research-assistant",
         "version": "0.1.0",
         "redis_connected": redis_healthy,
+        "worker_mode": settings.WORKER_MODE,
+        "active_workers_count": len(active_workers),
+        "active_workers": active_workers,
+        "queue_length": queue_len,
         "llm_provider": settings.LLM_PROVIDER,
         "search_engine": settings.SEARCH_ENGINE,
     }

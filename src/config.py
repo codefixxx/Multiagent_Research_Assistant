@@ -100,6 +100,18 @@ class Settings(BaseSettings):
     # Persistence (Redis)
     REDIS_URL: str = "redis://127.0.0.1:6379/0"
 
+    # Distributed Worker Configuration
+    WORKER_MODE: Literal["decoupled", "embedded"] = Field(
+        default="decoupled",
+        description="Execution mode: 'decoupled' enqueues to Redis queue; 'embedded' runs in-process.",
+        validation_alias=AliasChoices("WORKER_MODE", "worker_mode"),
+    )
+    WORKER_CONCURRENCY: int = Field(
+        default=2,
+        description="Number of concurrent research jobs per worker node.",
+        validation_alias=AliasChoices("WORKER_CONCURRENCY", "worker_concurrency"),
+    )
+
     # Production Budget & Guardrails
     MAX_SUB_QUESTIONS: int = 4
     MAX_SEARCHES_PER_SUB_QUESTION: int = 3

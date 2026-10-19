@@ -155,6 +155,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const data = await response.json();
       currentRunId = data.run_id;
+      try {
+        localStorage.setItem('multiagent_last_run_id', currentRunId);
+        window.history.replaceState({}, '', '?run_id=' + currentRunId);
+      } catch (e) {}
       appendLog('SYSTEM', `Run accepted [ID: ${currentRunId.slice(0, 8)}]`);
 
       // Begin SSE streaming & status polling
@@ -948,6 +952,86 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load saved settings on startup
   loadSettings();
+
+  async function updateHealthTelemetry() {
+    try {
+      const resp = await fetch('/health');
+      if (resp.ok) {
+        const data = await resp.json();
+        const dotRedis = telemetryRedis ? telemetryRedis.querySelector('.pill-dot') : null;
+        if (valRedis) {
+          if (data.redis_connected) {
+            valRedis.textContent = 'Online';
+            if (dotRedis) dotRedis.className = 'pill-dot connected';
+          } else {
+            valRedis.textContent = 'Offline';
+            if (dotRedis) dotRedis.className = 'pill-dot disconnected';
+          }
+        }
+
+        const dotWorker = document.getElementById('dot-worker');
+        const valWorker = document.getElementById('val-worker');
+        if (valWorker) {
+          if (data.worker_mode === 'decoupled') {
+            const count = data.active_workers_count || 0;
+            if (count > 0) {
+              valWorker.textContent = `${count} Online (Decoupled)`;
+              if (dotWorker) dotWorker.className = 'pill-dot connected';
+            } else {
+              valWorker.textContent = `Queue (${data.queue_length || 0} waiting)`;
+              if (dotWorker) dotWorker.className = 'pill-dot connecting';
+            }
+          } else {
+            valWorker.textContent = 'Embedded Mode';
+            if (dotWorker) dotWorker.className = 'pill-dot connected';
+          }
+        }
+      }
+    } catch (e) {
+      if (valRedis) valRedis.textContent = 'Disconnected';
+      const dotRedis = telemetryRedis ? telemetryRedis.querySelector('.pill-dot') : null;
+      if (dotRedis) dotRedis.className = 'pill-dot';
+    }
+  }
+
+  // Poll health on start and periodically
+  updateHealthTelemetry();
+  setInterval(updateHealthTelemetry, 8000);
+
+  async function loadSavedRun(runId) {
+    if (!runId) return;
+    try {
+      const resp = await fetch(`/research/${runId}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        currentRunId = runId;
+        reconcileProgress(data);
+        if (data.status === 'completed' || data.status === 'budget_exceeded') {
+          finalizeAllDagNodes();
+          renderFullReport(data);
+          pipelineStatusText.textContent = 'INVESTIGATION LOADED • ' + data.status.toUpperCase();
+          pipelinePulse.className = 'pulse-indicator';
+          if (queryInput && data.query) queryInput.value = data.query;
+          appendLog('SYSTEM', `Loaded completed investigation: "${data.query}" [ID: ${runId.slice(0, 8)}]`);
+        } else if (data.status === 'planning' || data.status === 'researching' || data.status === 'writing' || data.status === 'queued') {
+          pipelineStatusText.textContent = 'RUN IN FLIGHT • REATTACHED';
+          pipelinePulse.className = 'pulse-indicator active';
+          if (queryInput && data.query) queryInput.value = data.query;
+          connectSSE(runId);
+          startPolling(runId);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed loading saved run:', e);
+    }
+  }
+
+  // Restore run from URL param ?run_id=... or localStorage
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialRunId = urlParams.get('run_id') || localStorage.getItem('multiagent_last_run_id');
+  if (initialRunId) {
+    loadSavedRun(initialRunId);
+  }
 
   function resetWorkspace() {
     eventCounter = 0;

@@ -15,6 +15,14 @@ from src.schemas.report import Citation, ReportSection, ResearchReport
 from src.schemas.review import ReviewEvaluation
 
 
+@pytest.fixture(autouse=True)
+def set_default_test_worker_mode(monkeypatch):
+    """Default unit and integration tests to embedded mode so they don't require external daemons."""
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "WORKER_MODE", "embedded")
+
+
 class MockChatModel(BaseChatModel):
     """Deterministic Mock Chat Model for isolated specialist testing."""
 
