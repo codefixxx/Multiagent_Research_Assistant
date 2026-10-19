@@ -3,6 +3,8 @@
 import pytest
 from langchain_core.messages import AIMessage
 
+from pydantic import SecretStr
+
 from src.core.llm import LLMConfigurationError, extract_token_usage, get_chat_model
 from src.core.telemetry import TokenUsage
 
@@ -60,6 +62,7 @@ def test_openai_instantiation_with_ephemeral_key():
     )
     assert isinstance(model, ChatOpenAI)
     assert model.model_name == "gpt-4o-mini"
+    assert isinstance(model.openai_api_key, SecretStr)
     assert model.openai_api_key.get_secret_value() == "sk-test-mock-openai-key-12345"
 
 
@@ -72,6 +75,7 @@ def test_anthropic_instantiation_with_ephemeral_key():
     )
     assert isinstance(model, ChatAnthropic)
     assert model.model == "claude-3-5-sonnet-20241022"
+    assert isinstance(model.anthropic_api_key, SecretStr)
     assert model.anthropic_api_key.get_secret_value() == "sk-ant-test-mock-anthropic-key-12345"
 
 
