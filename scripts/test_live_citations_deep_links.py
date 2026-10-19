@@ -202,7 +202,7 @@ async def test_dozens_of_sites():
                     final_url = f"ERROR: {err}"
             latency_ms = (time.time() - t0) * 1000
 
-            has_redirect = str(final_url).rstrip("/") != url.rstrip("/")
+            has_redirect = final_url.rstrip("/") != url.rstrip("/")
             has_anchor = "#:~:text=" in anchor_url
 
             return {

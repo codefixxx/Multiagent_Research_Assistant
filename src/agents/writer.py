@@ -166,7 +166,7 @@ async def write_report(
                     anchor_url=create_text_fragment_url(
                         matched_finding.source_url, matched_finding.snippet
                     ),
-                    is_deep_link=bool(matched_finding.is_deep_link),
+                    is_deep_link=matched_finding.is_deep_link,
                 )
             )
             bound_cid_set.add(norm_cid)
@@ -184,7 +184,7 @@ async def write_report(
                     anchor_url=create_text_fragment_url(
                         matched_finding.source_url, matched_finding.snippet
                     ),
-                    is_deep_link=bool(matched_finding.is_deep_link),
+                    is_deep_link=matched_finding.is_deep_link,
                 )
             )
             bound_cid_set.add(norm)
