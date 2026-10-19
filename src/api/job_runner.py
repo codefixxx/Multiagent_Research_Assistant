@@ -62,7 +62,7 @@ class ResearchJobService:
         self.queue = queue
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
 
-    async def initialize(self, force_new: bool = False) -> None:
+    async def initialize(self, force_new: bool = False, force_fake: bool = False) -> None:
         """Initialize Redis connection and dependencies if not already supplied or loop changed."""
         is_stale = False
         try:
@@ -73,16 +73,20 @@ class ResearchJobService:
         except Exception:
             is_stale = True
 
-        if self.run_manager is None or force_new or is_stale:
-            client = await get_redis_client()
+        if self.run_manager is None or self.queue is None or force_new or is_stale:
+            client = await get_redis_client(force_fake=force_fake)
             try:
                 self._current_loop = asyncio.get_running_loop()
             except Exception:
                 self._current_loop = None
-            self.run_manager = RedisRunManager(client)
-            self.idempotency_cache = NodeIdempotencyCache(client)
-            self.checkpointer = await get_checkpointer(client)
-            self.queue = RedisJobQueue(client)
+            if self.run_manager is None or force_new:
+                self.run_manager = RedisRunManager(client)
+            if self.idempotency_cache is None or force_new:
+                self.idempotency_cache = NodeIdempotencyCache(client)
+            if self.checkpointer is None or force_new:
+                self.checkpointer = await get_checkpointer(client)
+            if self.queue is None or force_new:
+                self.queue = RedisJobQueue(client)
             await self.broadcaster.initialize(client)
 
     async def start_job(
@@ -473,6 +477,7 @@ class ResearchJobService:
                     "citation_validation": citation_validation.model_dump(mode="json") if citation_validation else None,
                 },
             )
+            await self.run_manager.apply_ttl(run_id)
             logger.info(
                 "Research job execution finished successfully", run_id=run_id, status=final_status
             )
@@ -484,6 +489,7 @@ class ResearchJobService:
                 status="cancelled",
                 error_message="Job execution cancelled by caller.",
             )
+            await self.run_manager.apply_ttl(run_id)
             await self.broadcaster.broadcast(
                 run_id=run_id,
                 event="job_failed",
@@ -500,6 +506,7 @@ class ResearchJobService:
                 status="failed",
                 error_message=str(e),
             )
+            await self.run_manager.apply_ttl(run_id)
             await self.broadcaster.broadcast(
                 run_id=run_id,
                 event="job_failed",

@@ -12,7 +12,7 @@ from src.api.job_runner import ResearchJobService, job_service
 from src.api.main import app
 from src.config import settings
 from src.persistence.queue import RedisJobQueue
-from src.persistence.redis_saver import get_redis_client
+from src.persistence.redis_saver import RedisRunManager, get_redis_client
 from src.schemas.api import ResearchRequest
 from src.worker import ResearchWorker
 
@@ -29,9 +29,10 @@ async def client():
 async def test_job_submission_returns_202_accepted_immediately_under_50ms(client, monkeypatch):
     """POST /research in decoupled mode enqueues to Redis and returns HTTP 202 in < 50ms without blocking."""
     monkeypatch.setattr(settings, "WORKER_MODE", "decoupled")
-    await job_service.initialize()
-    if job_service.queue:
-        await job_service.queue.clear_queue()
+    fake_client = await get_redis_client(force_fake=True)
+    job_service.queue = RedisJobQueue(fake_client)
+    job_service.run_manager = RedisRunManager(fake_client)
+    await job_service.queue.clear_queue()
 
     payload = {"query": "Evaluate distributed actor models for multi-agent systems"}
 
@@ -46,7 +47,7 @@ async def test_job_submission_returns_202_accepted_immediately_under_50ms(client
     # Verify non-blocking enqueue performance
     assert elapsed_ms < 100.0, f"Submission took {elapsed_ms:.1f}ms; expected < 100ms"
 
-    # Verify the job is in the Redis queue
+    # Verify the job is in the isolated Redis queue
     assert job_service.queue is not None
     q_len = await job_service.queue.get_queue_length()
     assert q_len >= 1
@@ -58,7 +59,7 @@ async def test_job_submission_returns_202_accepted_immediately_under_50ms(client
 @pytest.mark.asyncio
 async def test_redis_job_queue_enqueue_dequeue():
     """Verify RedisJobQueue FIFO semantics, serialization, and length tracking."""
-    redis_client = await get_redis_client()
+    redis_client = await get_redis_client(force_fake=True)
     queue = RedisJobQueue(redis_client)
     await queue.clear_queue()
 
@@ -93,7 +94,7 @@ async def test_redis_job_queue_enqueue_dequeue():
 @pytest.mark.asyncio
 async def test_worker_heartbeat_and_active_registry():
     """Verify worker registration, periodic heartbeats, and graceful deregistration."""
-    redis_client = await get_redis_client()
+    redis_client = await get_redis_client(force_fake=True)
     queue = RedisJobQueue(redis_client)
     worker_id = f"worker-test-node-{uuid.uuid4().hex[:6]}"
 
@@ -121,7 +122,7 @@ async def test_worker_heartbeat_and_active_registry():
 @pytest.mark.asyncio
 async def test_worker_processes_job_from_queue(mock_llm):
     """Independent worker pulls job from Redis, executes LangGraph, and persists completed report."""
-    redis_client = await get_redis_client()
+    redis_client = await get_redis_client(force_fake=True)
     queue = RedisJobQueue(redis_client)
     await queue.clear_queue()
 
@@ -158,7 +159,7 @@ async def test_worker_processes_job_from_queue(mock_llm):
 @pytest.mark.asyncio
 async def test_worker_cancellation_via_redis_flag(mock_llm):
     """Cancelling a run via Redis cancel flag halts worker execution."""
-    redis_client = await get_redis_client()
+    redis_client = await get_redis_client(force_fake=True)
     queue = RedisJobQueue(redis_client)
     service = ResearchJobService(queue=queue, llm=mock_llm)
     await service.initialize()
@@ -184,7 +185,7 @@ async def test_worker_cancellation_via_redis_flag(mock_llm):
 @pytest.mark.asyncio
 async def test_event_broadcaster_redis_history_replay():
     """Verify Redis-backed event persistence allows late-connecting SSE listeners to replay full event stream."""
-    redis_client = await get_redis_client()
+    redis_client = await get_redis_client(force_fake=True)
     broadcaster = EventBroadcaster(redis_client=redis_client)
     run_id = f"replay-run-{uuid.uuid4().hex[:6]}"
 
@@ -210,7 +211,7 @@ async def test_event_broadcaster_redis_history_replay():
 @pytest.mark.asyncio
 async def test_chaos_fastapi_reboot_worker_uninterrupted(mock_llm):
     """Chaos test: Simulate web server reboot mid-run while dedicated worker executes; state and report survive in Redis."""
-    redis_client = await get_redis_client()
+    redis_client = await get_redis_client(force_fake=True)
     queue = RedisJobQueue(redis_client)
     await queue.clear_queue()
 

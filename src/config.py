@@ -99,6 +99,11 @@ class Settings(BaseSettings):
 
     # Persistence (Redis)
     REDIS_URL: str = "redis://127.0.0.1:6379/0"
+    REPORT_RETENTION_SECONDS: int = Field(
+        default=86400,
+        description="TTL in seconds for ephemeral research run data (reports, events, steps, metadata). Set to 0 to disable auto-cleanup.",
+        validation_alias=AliasChoices("REPORT_RETENTION_SECONDS", "report_retention_seconds"),
+    )
 
     # Distributed Worker Configuration
     WORKER_MODE: Literal["decoupled", "embedded"] = Field(

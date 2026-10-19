@@ -179,8 +179,13 @@ async def get_checkpointer(
 class RedisRunManager:
     """Manages research run lifecycle metadata and progress tracking in Redis."""
 
-    def __init__(self, redis_client: Any) -> None:
+    def __init__(self, redis_client: Any, default_ttl_seconds: int | None = None) -> None:
         self.redis = redis_client
+        self.default_ttl = (
+            default_ttl_seconds
+            if default_ttl_seconds is not None
+            else getattr(settings, "REPORT_RETENTION_SECONDS", 86400)
+        )
 
     def _meta_key(self, run_id: str) -> str:
         return f"research:run:{run_id}:metadata"
@@ -202,7 +207,10 @@ class RedisRunManager:
             "updated_at": now,
             "error_message": None,
         }
-        await self.redis.set(self._meta_key(run_id), json.dumps(metadata))
+        if self.default_ttl and self.default_ttl > 0:
+            await self.redis.set(self._meta_key(run_id), json.dumps(metadata), ex=self.default_ttl)
+        else:
+            await self.redis.set(self._meta_key(run_id), json.dumps(metadata))
         logger.info("Initialized research run metadata in Redis", run_id=run_id, query=query)
         return metadata
 
@@ -234,7 +242,10 @@ class RedisRunManager:
         if error_message is not None:
             meta["error_message"] = error_message
 
-        await self.redis.set(self._meta_key(run_id), json.dumps(meta))
+        if self.default_ttl and self.default_ttl > 0:
+            await self.redis.set(self._meta_key(run_id), json.dumps(meta), ex=self.default_ttl)
+        else:
+            await self.redis.set(self._meta_key(run_id), json.dumps(meta))
         return meta
 
     async def get_run_metadata(self, run_id: str) -> dict[str, Any] | None:
@@ -265,7 +276,10 @@ class RedisRunManager:
                 "timestamp": datetime.now(UTC).isoformat(),
             }
         )
-        await self.redis.rpush(self._steps_key(run_id), step_record)
+        steps_key = self._steps_key(run_id)
+        await self.redis.rpush(steps_key, step_record)
+        if self.default_ttl and self.default_ttl > 0:
+            await self.redis.expire(steps_key, self.default_ttl)
 
     async def get_step_history(self, run_id: str) -> list[dict[str, Any]]:
         """Retrieve the sequence of completed steps for a run."""
@@ -277,11 +291,14 @@ class RedisRunManager:
         return history
 
     async def save_report(self, run_id: str, report_data: dict[str, Any] | str) -> None:
-        """Persist the finalized research report in Redis."""
+        """Persist the finalized research report in Redis with automatic TTL."""
         payload = (
             report_data if isinstance(report_data, str) else json.dumps(report_data, default=str)
         )
-        await self.redis.set(self._report_key(run_id), payload)
+        if self.default_ttl and self.default_ttl > 0:
+            await self.redis.set(self._report_key(run_id), payload, ex=self.default_ttl)
+        else:
+            await self.redis.set(self._report_key(run_id), payload)
 
     async def get_report(self, run_id: str) -> dict[str, Any] | None:
         """Retrieve the persisted report for a given run ID."""
@@ -292,9 +309,12 @@ class RedisRunManager:
         return json.loads(data_str)
 
     async def save_audit_log(self, run_id: str, audit_data: dict[str, Any] | str) -> None:
-        """Persist the full audit log in Redis."""
+        """Persist the full audit log in Redis with automatic TTL."""
         payload = audit_data if isinstance(audit_data, str) else json.dumps(audit_data, default=str)
-        await self.redis.set(self._trace_key(run_id), payload)
+        if self.default_ttl and self.default_ttl > 0:
+            await self.redis.set(self._trace_key(run_id), payload, ex=self.default_ttl)
+        else:
+            await self.redis.set(self._trace_key(run_id), payload)
 
     async def get_audit_log(self, run_id: str) -> dict[str, Any] | None:
         """Retrieve the full audit log for a given run ID."""
@@ -304,6 +324,26 @@ class RedisRunManager:
         data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         return json.loads(data_str)
 
+    async def apply_ttl(self, run_id: str, ttl_seconds: int | None = None) -> None:
+        """Apply or refresh expiration TTL across all Redis artifacts associated with a run."""
+        ttl = ttl_seconds if ttl_seconds is not None else self.default_ttl
+        if not ttl or ttl <= 0:
+            return
+        keys = [
+            self._meta_key(run_id),
+            self._steps_key(run_id),
+            self._report_key(run_id),
+            self._trace_key(run_id),
+            f"research:run:{run_id}:events",
+            f"checkpoint:{run_id}",
+            f"checkpoint:{run_id}:latest",
+        ]
+        for key in keys:
+            try:
+                await self.redis.expire(key, ttl)
+            except Exception:
+                pass
+
     async def clear_run(self, run_id: str) -> None:
         """Purge metadata, step records, report, and audit records for a given run."""
         await self.redis.delete(
@@ -311,6 +351,10 @@ class RedisRunManager:
             self._steps_key(run_id),
             self._report_key(run_id),
             self._trace_key(run_id),
+            f"research:run:{run_id}:events",
+            f"research:run:{run_id}:cancel",
+            f"checkpoint:{run_id}",
+            f"checkpoint:{run_id}:latest",
         )
 
 

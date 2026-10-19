@@ -102,3 +102,66 @@ async def test_node_idempotency_cache():
         hit["findings"][0]["claim"]
         == "Raft decomposes consensus into leader election and log replication."
     )
+
+
+@pytest.mark.asyncio
+async def test_redis_run_manager_auto_expire_ttl():
+    """Verify ephemeral scratchpad TTL policy auto-expires all run artifacts."""
+    client = await get_redis_client(force_fake=True)
+    ttl_seconds = 3600
+    manager = RedisRunManager(redis_client=client, default_ttl_seconds=ttl_seconds)
+
+    run_id = "test-ttl-run-303"
+    query = "Ephemeral storage lifecycle verification"
+
+    # 1. Metadata TTL on init
+    await manager.init_run(run_id, query)
+    meta_ttl = await client.ttl(manager._meta_key(run_id))
+    assert 0 < meta_ttl <= ttl_seconds
+
+    # 2. Steps list TTL
+    await manager.record_completed_step(run_id, "planner", 1)
+    steps_ttl = await client.ttl(manager._steps_key(run_id))
+    assert 0 < steps_ttl <= ttl_seconds
+
+    # 3. Report TTL
+    sample_report = {"title": "TTL Report", "sections": []}
+    await manager.save_report(run_id, sample_report)
+    report_ttl = await client.ttl(manager._report_key(run_id))
+    assert 0 < report_ttl <= ttl_seconds
+
+    # 4. Audit trace TTL
+    sample_trace = {"run_id": run_id, "status": "completed"}
+    await manager.save_audit_log(run_id, sample_trace)
+    trace_ttl = await client.ttl(manager._trace_key(run_id))
+    assert 0 < trace_ttl <= ttl_seconds
+
+    # 5. Metadata TTL preserved on status update
+    await manager.update_run_status(run_id, status="completed", current_node="done")
+    updated_meta_ttl = await client.ttl(manager._meta_key(run_id))
+    assert 0 < updated_meta_ttl <= ttl_seconds
+
+    # 6. Apply TTL refreshes all keys uniformly
+    new_ttl = 7200
+    await manager.apply_ttl(run_id, ttl_seconds=new_ttl)
+    refreshed_meta_ttl = await client.ttl(manager._meta_key(run_id))
+    refreshed_report_ttl = await client.ttl(manager._report_key(run_id))
+    assert 3600 < refreshed_meta_ttl <= new_ttl
+    assert 3600 < refreshed_report_ttl <= new_ttl
+
+
+@pytest.mark.asyncio
+async def test_redis_run_manager_disabled_ttl():
+    """Verify TTL is disabled when default_ttl_seconds=0 (permanent storage mode)."""
+    client = await get_redis_client(force_fake=True)
+    manager = RedisRunManager(redis_client=client, default_ttl_seconds=0)
+
+    run_id = "test-permanent-run-404"
+    await manager.init_run(run_id, "Permanent retention test")
+    meta_ttl = await client.ttl(manager._meta_key(run_id))
+    # In Redis/FakeRedis, TTL is -1 when key exists with no expiration
+    assert meta_ttl == -1
+
+    await manager.save_report(run_id, {"title": "Permanent"})
+    report_ttl = await client.ttl(manager._report_key(run_id))
+    assert report_ttl == -1

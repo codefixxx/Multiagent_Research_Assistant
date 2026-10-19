@@ -14,8 +14,9 @@ WORKERS_SET = "research:workers:active"
 class RedisJobQueue:
     """Manages enqueueing, dequeueing, cancellation, and heartbeat registry in Redis."""
 
-    def __init__(self, redis_client: Any) -> None:
+    def __init__(self, redis_client: Any, queue_key: str = QUEUE_KEY) -> None:
         self.redis = redis_client
+        self.queue_key = queue_key
 
     async def enqueue(
         self,
@@ -30,13 +31,13 @@ class RedisJobQueue:
             "enqueued_at": datetime.now(UTC).isoformat(),
             "priority": priority,
         }
-        await self.redis.rpush(QUEUE_KEY, json.dumps(payload))
+        await self.redis.rpush(self.queue_key, json.dumps(payload))
         logger.info("Enqueued research job in Redis queue", run_id=run_id, query=request.query)
         return payload
 
     async def dequeue(self, timeout: float = 2.0) -> dict[str, Any] | None:
         """Pop the next available research job from the queue with timeout."""
-        res = await self.redis.blpop(QUEUE_KEY, timeout=timeout)
+        res = await self.redis.blpop(self.queue_key, timeout=timeout)
         if not res:
             return None
         _, raw_payload = res
@@ -45,11 +46,11 @@ class RedisJobQueue:
 
     async def get_queue_length(self) -> int:
         """Return the number of waiting jobs in the queue."""
-        return await self.redis.llen(QUEUE_KEY)
+        return await self.redis.llen(self.queue_key)
 
     async def clear_queue(self) -> None:
         """Purge all pending jobs from the queue."""
-        await self.redis.delete(QUEUE_KEY)
+        await self.redis.delete(self.queue_key)
 
     async def register_worker(
         self,

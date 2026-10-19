@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from typing import Any
 
+from src.config import settings
 from src.core.logger import logger
 
 EVENT_STREAM_KEY = "research:run:{run_id}:events"
@@ -66,7 +67,9 @@ class EventBroadcaster:
                 channel = EVENT_CHANNEL.format(run_id=run_id)
                 # Store in Redis list for durable replay across server restarts
                 await self.redis.rpush(stream_key, sse_message)
-                await self.redis.expire(stream_key, 86400)
+                retention = getattr(settings, "REPORT_RETENTION_SECONDS", 86400)
+                if retention and retention > 0:
+                    await self.redis.expire(stream_key, retention)
                 # Publish on Redis channel for decoupled worker -> SSE distribution
                 await self.redis.publish(channel, sse_message)
             except Exception as e:
