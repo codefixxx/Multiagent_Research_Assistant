@@ -60,10 +60,21 @@ def route_after_planner(state: ResearchState) -> list[Send] | str:
     run_id = state.get("run_id", "")
     query = state.get("query", "")
 
+    max_subqs = state.get("max_sub_questions")
+    sub_questions = plan.sub_questions
+    if max_subqs and max_subqs > 0:
+        sub_questions = sub_questions[:max_subqs]
+
+    start_time = state.get("start_time", 0.0)
+    max_wall_clock = state.get("max_wall_clock_seconds")
+    deep_scrape_pref = state.get("deep_scrape", True)
+
     logger.info(
         "Supervisor fanning out parallel researchers via Send API",
-        total_sub_questions=len(plan.sub_questions),
+        total_sub_questions=len(sub_questions),
         run_id=run_id,
+        max_sub_questions=max_subqs,
+        max_wall_clock_seconds=max_wall_clock,
     )
     return [
         Send(
@@ -73,9 +84,12 @@ def route_after_planner(state: ResearchState) -> list[Send] | str:
                 "index": idx,
                 "run_id": run_id,
                 "query": query,
+                "start_time": start_time,
+                "max_wall_clock_seconds": max_wall_clock,
+                "deep_scrape": deep_scrape_pref,
             },
         )
-        for idx, sq in enumerate(plan.sub_questions)
+        for idx, sq in enumerate(sub_questions)
     ]
 
 
@@ -86,7 +100,8 @@ def route_after_consolidator(state: ResearchState) -> str:
     parallel research passes, otherwise advances to the writer node.
     """
     budget = evaluate_budget(state)
-    if budget.is_exceeded or state.get("status") == "budget_exceeded":
+    is_resource_breached = budget.is_exceeded and budget.exceeded_metric in ("tokens", "wall_clock")
+    if is_resource_breached or state.get("status") == "budget_exceeded":
         logger.warning(
             "Hard budget exceeded in supervisor; routing to emergency writer",
             reason=budget.reason if budget.is_exceeded else "Budget limit breached",
@@ -112,17 +127,21 @@ def route_after_reviewer(state: ResearchState) -> str:
     """Determine the next step after the reviewer evaluates researcher findings.
 
     STRICT CONSTRAINTS ENFORCED HERE:
-    1. Hard budget check: if tokens, time, or question limits are breached, route to emergency_writer.
-    2. Single-pass revision gate: reviewer can send work back AT MOST ONCE.
+    1. Hard budget check: if tokens or time limits are breached, route to emergency_writer.
+    2. Sub-question cap reached: normal completion, route to writer.
+    3. Single-pass revision gate: reviewer can send work back AT MOST ONCE.
     """
     # 1. Evaluate hard budget
     budget = evaluate_budget(state)
     if budget.is_exceeded:
-        logger.warning(
-            "Hard budget exceeded in supervisor; routing to emergency writer",
-            reason=budget.reason,
-        )
-        return "emergency_writer"
+        if budget.exceeded_metric in ("tokens", "wall_clock"):
+            logger.warning(
+                "Hard budget exceeded in supervisor; routing to emergency writer",
+                reason=budget.reason,
+            )
+            return "emergency_writer"
+        logger.info("Supervisor reached sub-question cap; routing to writer")
+        return "writer"
 
     plan = _normalize_plan(state.get("plan"))
     if not plan:

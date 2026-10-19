@@ -72,5 +72,11 @@ class ResearchState(TypedDict, total=False):
     step_count: Annotated[int, operator.add]
     audit_traces: Annotated[list[StepTrace], operator.add]
 
+    # Dynamic run limits requested by caller
+    max_sub_questions: int | None
+    max_wall_clock_seconds: float | None
+    max_tokens: int | None
+    deep_scrape: bool | None
+
     # Error handling
     error_message: str | None

@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const reportContent = document.getElementById('report-content');
   const reportActions = document.getElementById('report-actions');
   const btnCopyMd = document.getElementById('btn-copy-md');
+  const btnDownloadMd = document.getElementById('btn-download-md');
   const btnDownloadJson = document.getElementById('btn-download-json');
 
   // Popover references
@@ -58,6 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let pollInterval = null;
   let timerInterval = null;
   let startTime = null;
+  let selectedTimeLimitSec = 120;
   let eventCounter = 0;
   let activeRunData = null;
   let citationMap = new Map(); // citation_id -> { source_url, verified_claim }
@@ -233,10 +235,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       appendLog('RESEARCHER', `Gathered evidence findings${subqId ? ' for ' + subqId : ''}`);
     } else if (evtName === 'subquestion_reviewed' || evtName === 'review_complete') {
+      const isRevision = Boolean(payload.is_revision);
       const approved = payload.is_revision !== undefined ? !payload.is_revision : Boolean(payload.is_approved);
       const subqId = payload.sub_question_id;
-      if (subqId) updateWorkerReviewBadge(subqId, approved);
-      appendLog('REVIEWER', `Quality evaluation for ${subqId || 'worker'}: ${approved ? 'Approved' : '1x Revision Requested'}`);
+      if (subqId) updateWorkerReviewBadge(subqId, approved, isRevision);
+      appendLog('REVIEWER', `Quality evaluation for ${subqId || 'worker'}: ${isRevision ? '1x Revision Triggered (Refining evidence)' : 'Approved'}`);
     } else if (evtName === 'consolidator_completed') {
       finalizeAllWorkers();
       updateNodeState('consolidator', 'completed');
@@ -250,8 +253,15 @@ document.addEventListener('DOMContentLoaded', () => {
       finalizeAllWorkers();
       updateNodeState('writer', 'completed');
       appendLog('WRITER', `Technical report synthesis complete with ${payload.citations_count || 0} citations`);
-    } else if (evtName === 'job_completed') {
+    } else if (evtName === 'job_completed' || evtName === 'budget_exceeded') {
       finalizeAllDagNodes();
+      if (evtName === 'budget_exceeded') {
+        pipelineStatusText.textContent = 'TERMINATED • BUDGET_EXCEEDED';
+        appendLog('SYSTEM', 'Budget ceiling reached. Interim synthesis rendered.');
+      } else {
+        pipelineStatusText.textContent = 'INVESTIGATION COMPLETED';
+        appendLog('SYSTEM', 'Investigation complete. Final dossier rendered.');
+      }
       if (payload.report) {
         renderFullReport(payload);
       } else if (currentRunId) {
@@ -259,7 +269,6 @@ document.addEventListener('DOMContentLoaded', () => {
           .then(res => res.json())
           .then(data => { if (data.report) renderFullReport(data); });
       }
-      appendLog('SYSTEM', 'Investigation complete. Final dossier rendered.');
     }
   }
 
@@ -277,20 +286,26 @@ document.addEventListener('DOMContentLoaded', () => {
         reconcileProgress(data);
 
         if (data.status === 'completed' || data.status === 'failed' || data.status === 'budget_exceeded') {
-          if (data.status === 'completed') {
-            // ONLY stop polling if the report is actually populated
+          if (data.status === 'completed' || data.status === 'budget_exceeded') {
+            // Stop polling when report is populated
             if (data.report && (data.report.title || data.report.markdown_output)) {
               clearInterval(pollInterval);
               if (eventSource) eventSource.close();
               finalizeAllDagNodes();
               renderFullReport(data);
+              if (data.status === 'completed') {
+                pipelineStatusText.textContent = 'INVESTIGATION COMPLETED';
+              } else {
+                pipelineStatusText.textContent = 'TERMINATED • BUDGET_EXCEEDED';
+                appendLog('SYSTEM', `Run halted: ${data.error_message || 'Budget or time limit reached'}`);
+              }
             }
           } else {
             clearInterval(pollInterval);
             if (eventSource) eventSource.close();
             finalizeAllDagNodes();
             pipelineStatusText.textContent = `TERMINATED • ${data.status.toUpperCase()}`;
-            appendLog('SYSTEM', `Run halted: ${data.error_message || 'Budget or time limit reached'}`);
+            appendLog('SYSTEM', `Run halted: ${data.error_message || 'Research run encountered an error'}`);
           }
         }
       } catch (e) {
@@ -428,10 +443,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function updateWorkerReviewBadge(subqId, approved) {
+  function updateWorkerReviewBadge(subqId, approved, isRevision) {
     const { badge, capsule } = getWorkerElements(subqId);
     if (badge) {
-      if (approved) {
+      if (isRevision) {
+        badge.className = 'worker-badge badge-revision';
+        badge.textContent = '↺ Revision (Pass 2)';
+        if (capsule) {
+          capsule.className = 'worker-capsule active';
+          const wstat = capsule.querySelector('.worker-status-text');
+          if (wstat) wstat.textContent = 'Refining evidence...';
+        }
+      } else if (approved) {
         badge.className = 'worker-badge badge-approved';
         badge.textContent = '✓ Approved';
         if (capsule) capsule.className = 'worker-capsule completed';
@@ -657,6 +680,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  if (btnDownloadMd) {
+    btnDownloadMd.addEventListener('click', () => {
+      if (activeRunData && activeRunData.report && activeRunData.report.markdown_output) {
+        const blob = new Blob([activeRunData.report.markdown_output], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `research_report_${(currentRunId || 'export').slice(0, 8)}.md`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    });
+  }
+
   btnDownloadJson.addEventListener('click', () => {
     if (activeRunData) {
       const blob = new Blob([JSON.stringify(activeRunData, null, 2)], { type: 'application/json' });
@@ -708,11 +745,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function startTimer() {
     startTime = Date.now();
-    pipelineTimer.textContent = '00:00.0';
+    selectedTimeLimitSec = parseFloat(wallclockInput.value) || 120;
+    updateTimerDisplay();
     if (timerInterval) clearInterval(timerInterval);
-    timerInterval = setInterval(() => {
-      pipelineTimer.textContent = getElapsedFormatted();
-    }, 100);
+    timerInterval = setInterval(updateTimerDisplay, 100);
+  }
+
+  function updateTimerDisplay() {
+    const elapsed = getElapsedFormatted();
+    const limitMins = Math.floor(selectedTimeLimitSec / 60);
+    const limitSecs = Math.floor(selectedTimeLimitSec % 60);
+    const limitStr = `${String(limitMins).padStart(2, '0')}:${String(limitSecs).padStart(2, '0')}`;
+    pipelineTimer.textContent = `${elapsed} / ${limitStr}`;
   }
 
   function stopTimer() {

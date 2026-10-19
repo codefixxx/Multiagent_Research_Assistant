@@ -105,9 +105,12 @@ def build_research_graph(
         step = 1
         query = state.get("query", "")
         run_id = state.get("run_id", "")
-        logger.info("Executing Planner node", step=step, query=query)
+        max_subqs = state.get("max_sub_questions")
+        logger.info("Executing Planner node", step=step, query=query, max_sub_questions=max_subqs)
 
-        plan, tokens, latency = await plan_research(query=query, llm=llm)
+        plan, tokens, latency = await plan_research(
+            query=query, llm=llm, max_sub_questions=max_subqs
+        )
 
         trace = create_step_trace(
             step_number=step,
@@ -155,6 +158,9 @@ def build_research_graph(
             idx = payload.get("index", 0)
             query = payload.get("query", "")
             run_id = payload.get("run_id", "")
+            deep_scrape_flag = payload.get("deep_scrape", True)
+            start_time = payload.get("start_time", 0.0)
+            max_wall_clock = payload.get("max_wall_clock_seconds")
         else:
             plan = _normalize_plan(payload.get("plan"))
             if not plan:
@@ -163,6 +169,9 @@ def build_research_graph(
             sub_question = plan.sub_questions[idx]
             query = payload.get("query", "")
             run_id = payload.get("run_id", "")
+            deep_scrape_flag = payload.get("deep_scrape", True)
+            start_time = payload.get("start_time", 0.0)
+            max_wall_clock = payload.get("max_wall_clock_seconds")
 
         step_res = 2 + (idx * 2)
         step_rev = 3 + (idx * 2)
@@ -221,7 +230,7 @@ def build_research_graph(
         else:
             evidence_res = await collector.collect_evidence_for_queries(
                 queries=queries,
-                deep_scrape=not is_mock_llm,
+                deep_scrape=(not is_mock_llm and deep_scrape_flag),
             )
             evidence = evidence_res.formatted_context
             output, res_tokens, res_latency = await research_subquestion(
@@ -288,42 +297,59 @@ def build_research_graph(
         traces.append(trace_rev)
 
         # 3. Single-pass revision gate if reviewer requested revision
+        is_revision_executed = False
         if not evaluation.is_approved:
-            logger.info(
-                "Worker executing single permitted revision", sub_question_id=sub_question.id
+            elapsed = (time.time() - start_time) if start_time > 0 else 0.0
+            wall_limit = (
+                float(max_wall_clock)
+                if max_wall_clock
+                else float(settings.MAX_WALL_CLOCK_SECONDS)
             )
-            rev_queries = list(queries) + [f"{sub_question.question} {evaluation.feedback[:60]}"]
-            rev_evidence_res = await collector.collect_evidence_for_queries(
-                queries=rev_queries,
-                deep_scrape=not is_mock_llm,
-            )
-            rev_evidence = (
-                rev_evidence_res.formatted_context
-                + f"\n\nReviewer Feedback Guidance: {evaluation.feedback}\n"
-            )
-            rev_output, r2_tokens, r2_latency = await research_subquestion(
-                sub_question=sub_question,
-                evidence_context=rev_evidence,
-                llm=llm,
-            )
-            if rev_output.findings:
-                findings = rev_output.findings
-            worker_tokens.add(
-                r2_tokens.prompt_tokens,
-                r2_tokens.completion_tokens,
-                r2_tokens.estimated_cost_usd,
-            )
-            worker_steps += 1
-            traces.append(
-                create_step_trace(
-                    step_number=step_rev + 1,
-                    agent_name="researcher",
-                    input_data={"sub_question_id": sub_question.id, "revision": True},
-                    output_data={"findings_count": len(findings)},
-                    tokens=r2_tokens,
-                    latency_ms=r2_latency,
+            # If less than 20 seconds remain before hard ceiling, skip revision pass
+            if start_time > 0 and (elapsed + 20.0 >= wall_limit):
+                logger.warning(
+                    "Worker skipping revision pass to preserve remaining wall-clock budget",
+                    sub_question_id=sub_question.id,
+                    elapsed=elapsed,
+                    wall_limit=wall_limit,
                 )
-            )
+            else:
+                is_revision_executed = True
+                logger.info(
+                    "Worker executing single permitted revision", sub_question_id=sub_question.id
+                )
+                rev_queries = list(queries) + [f"{sub_question.question} {evaluation.feedback[:60]}"]
+                rev_evidence_res = await collector.collect_evidence_for_queries(
+                    queries=rev_queries,
+                    deep_scrape=(not is_mock_llm and deep_scrape_flag),
+                )
+                rev_evidence = (
+                    rev_evidence_res.formatted_context
+                    + f"\n\nReviewer Feedback Guidance: {evaluation.feedback}\n"
+                )
+                rev_output, r2_tokens, r2_latency = await research_subquestion(
+                    sub_question=sub_question,
+                    evidence_context=rev_evidence,
+                    llm=llm,
+                )
+                if rev_output.findings:
+                    findings = rev_output.findings
+                worker_tokens.add(
+                    r2_tokens.prompt_tokens,
+                    r2_tokens.completion_tokens,
+                    r2_tokens.estimated_cost_usd,
+                )
+                worker_steps += 1
+                traces.append(
+                    create_step_trace(
+                        step_number=step_rev + 1,
+                        agent_name="researcher",
+                        input_data={"sub_question_id": sub_question.id, "revision": True},
+                        output_data={"findings_count": len(findings)},
+                        tokens=r2_tokens,
+                        latency_ms=r2_latency,
+                    )
+                )
 
         if run_manager and run_id:
             try:
@@ -356,7 +382,11 @@ def build_research_graph(
         )
 
         budget = evaluate_budget(state)
-        new_status = "budget_exceeded" if budget.is_exceeded else "writing"
+        is_resource_breached = budget.is_exceeded and budget.exceeded_metric in (
+            "tokens",
+            "wall_clock",
+        )
+        new_status = "budget_exceeded" if is_resource_breached else "writing"
 
         if run_manager and run_id:
             try:
@@ -538,7 +568,14 @@ def compile_research_graph(
     return builder.compile(checkpointer=checkpointer)
 
 
-def create_initial_state(query: str, run_id: str | None = None) -> ResearchState:
+def create_initial_state(
+    query: str,
+    run_id: str | None = None,
+    max_sub_questions: int | None = None,
+    max_wall_clock_seconds: float | None = None,
+    max_tokens: int | None = None,
+    deep_scrape: bool = True,
+) -> ResearchState:
     """Initialize a clean, typed ResearchState instance for a new run."""
     return ResearchState(
         run_id=run_id or str(uuid.uuid4()),
@@ -555,5 +592,9 @@ def create_initial_state(query: str, run_id: str | None = None) -> ResearchState
         start_time=time.time(),
         step_count=0,
         audit_traces=[],
+        max_sub_questions=max_sub_questions,
+        max_wall_clock_seconds=max_wall_clock_seconds,
+        max_tokens=max_tokens,
+        deep_scrape=deep_scrape,
         error_message=None,
     )

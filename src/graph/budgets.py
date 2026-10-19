@@ -51,7 +51,21 @@ def evaluate_budget(
     Returns:
         BudgetCheckResult indicating if emergency synthesis is mandatory.
     """
-    effective_limits = limits or BudgetLimits()
+    dynamic_wall_clock = state.get("max_wall_clock_seconds")
+    dynamic_tokens = state.get("max_tokens")
+    dynamic_sub_questions = state.get("max_sub_questions")
+
+    effective_limits = limits or BudgetLimits(
+        max_wall_clock_seconds=float(dynamic_wall_clock)
+        if dynamic_wall_clock
+        else float(settings.MAX_WALL_CLOCK_SECONDS),
+        max_budget_tokens=int(dynamic_tokens)
+        if dynamic_tokens
+        else settings.MAX_BUDGET_TOKENS,
+        max_sub_questions=int(dynamic_sub_questions)
+        if dynamic_sub_questions
+        else settings.MAX_SUB_QUESTIONS,
+    )
 
     # 1. Check cumulative token ceiling
     tokens = state.get("total_tokens")

@@ -140,7 +140,14 @@ class ResearchJobService:
             idempotency_cache=self.idempotency_cache,
         )
 
-        initial_state = create_initial_state(query=request.query, run_id=run_id)
+        initial_state = create_initial_state(
+            query=request.query,
+            run_id=run_id,
+            max_sub_questions=request.max_sub_questions,
+            max_wall_clock_seconds=request.max_wall_clock_seconds,
+            max_tokens=request.max_tokens,
+            deep_scrape=request.deep_scrape,
+        )
         config: RunnableConfig = {"configurable": {"thread_id": run_id}}
 
         merged_state: dict[str, Any] = dict(initial_state)
@@ -190,12 +197,15 @@ class ResearchJobService:
                         new_findings = node_output.get("current_sub_question_findings", [])
                         if not new_findings and "findings" in node_output:
                             new_findings = node_output.get("findings", [])
-                        subq_id = None
-                        if new_findings and len(new_findings) > 0:
+                        subq_id = node_output.get("sub_question_id")
+                        if not subq_id and new_findings and len(new_findings) > 0:
                             first_f = new_findings[0]
                             subq_id = getattr(first_f, "sub_question_id", None) or (
                                 first_f.get("sub_question_id") if isinstance(first_f, dict) else None
                             )
+                        is_approved = node_output.get("is_approved", True)
+                        is_revision = node_output.get("is_revision", False)
+
                         await self.broadcaster.broadcast(
                             run_id=run_id,
                             event="researching_subquestion",
@@ -205,6 +215,7 @@ class ResearchJobService:
                                 "sub_question_id": subq_id,
                                 "new_findings_count": len(new_findings),
                                 "total_findings_count": len(findings),
+                                "is_revision": is_revision,
                             },
                         )
                         if subq_id:
@@ -214,8 +225,8 @@ class ResearchJobService:
                                 data={
                                     "node": "reviewer",
                                     "sub_question_id": subq_id,
-                                    "is_approved": True,
-                                    "is_revision": False,
+                                    "is_approved": is_approved,
+                                    "is_revision": is_revision,
                                 },
                             )
 

@@ -32,12 +32,14 @@ Research Query: {query}
 async def plan_research(
     query: str,
     llm: BaseChatModel | None = None,
+    max_sub_questions: int | None = None,
 ) -> tuple[ResearchPlan, TokenUsage, float]:
     """Execute the planner specialist in isolation.
 
     Args:
         query: The user's research query.
         llm: Optional chat model instance. If None, default model is instantiated.
+        max_sub_questions: Optional maximum number of sub-questions to generate.
 
     Returns:
         Tuple of (ResearchPlan, TokenUsage, latency_ms).
@@ -45,14 +47,21 @@ async def plan_research(
     model = llm or get_chat_model()
     structured_llm = model.with_structured_output(ResearchPlan, include_raw=True)
 
+    human_content = PLANNER_HUMAN_PROMPT.format(query=query)
+    if max_sub_questions and max_sub_questions > 0:
+        human_content += (
+            f"\nCRITICAL CONSTRAINT: You must generate EXACTLY {max_sub_questions} sub-questions "
+            f"(do not exceed {max_sub_questions})."
+        )
+
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", PLANNER_SYSTEM_PROMPT),
-            ("human", PLANNER_HUMAN_PROMPT),
+            ("human", human_content),
         ]
     )
 
-    formatted_messages = prompt.format_messages(query=query)
+    formatted_messages = prompt.format_messages()
 
     timer = ExecutionTimer()
     with timer:
@@ -69,6 +78,10 @@ async def plan_research(
     else:
         raise ValueError(f"Failed to produce valid ResearchPlan: {raw_result}")
 
+    # Enforce strict upper bound on sub-question count if specified
+    if max_sub_questions and max_sub_questions > 0:
+        parsed_plan.sub_questions = parsed_plan.sub_questions[:max_sub_questions]
+
     # Ensure all sub-questions are initialized with pending status
     for sq in parsed_plan.sub_questions:
         sq.status = SubQuestionStatus.PENDING
@@ -82,3 +95,4 @@ async def plan_research(
     )
 
     return parsed_plan, token_usage, timer.elapsed_ms
+
