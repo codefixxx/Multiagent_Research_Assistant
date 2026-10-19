@@ -53,6 +53,25 @@ document.addEventListener('DOMContentLoaded', () => {
   const popoverUrl = document.getElementById('popover-url');
   const popoverClose = document.getElementById('popover-close');
 
+  // Settings & BYOK Drawer references
+  const btnOpenSettings = document.getElementById('btn-open-settings');
+  const btnCloseSettings = document.getElementById('btn-close-settings');
+  const drawerOverlay = document.getElementById('drawer-overlay');
+  const settingsDrawer = document.getElementById('settings-drawer');
+  const btnSaveSettings = document.getElementById('btn-save-settings');
+  const btnResetSettings = document.getElementById('btn-reset-settings');
+  const presetFast = document.getElementById('preset-fast');
+  const presetQuality = document.getElementById('preset-quality');
+  const matrixPlanner = document.getElementById('matrix-planner');
+  const matrixResearcher = document.getElementById('matrix-researcher');
+  const matrixReviewer = document.getElementById('matrix-reviewer');
+  const matrixWriter = document.getElementById('matrix-writer');
+  const keyGemini = document.getElementById('key-gemini');
+  const keyOpenai = document.getElementById('key-openai');
+  const keyAnthropic = document.getElementById('key-anthropic');
+  const keyGroq = document.getElementById('key-groq');
+  const keyTavily = document.getElementById('key-tavily');
+
   // State
   let currentRunId = null;
   let eventSource = null;
@@ -108,11 +127,16 @@ document.addEventListener('DOMContentLoaded', () => {
     setDispatchingState(true);
 
     try {
+      const modelMatrix = getActiveModelMatrix();
+      const apiKeys = getStoredApiKeys();
+
       const payload = {
         query: query,
         max_sub_questions: parseInt(subqSelect.value, 10),
         max_wall_clock_seconds: parseFloat(wallclockInput.value),
-        deep_scrape: deepScrapeChk.checked
+        deep_scrape: deepScrapeChk.checked,
+        model_matrix: modelMatrix,
+        api_keys: apiKeys
       };
 
       appendLog('SYSTEM', `Dispatching investigation: "${query}"`);
@@ -772,6 +796,158 @@ document.addEventListener('DOMContentLoaded', () => {
     const dec = Math.floor((elapsedMs % 1000) / 100);
     return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${dec}`;
   }
+
+  // 10. Settings & BYOK Controller
+  const STORAGE_KEY_API_KEYS = 'multiresearch_byok_keys';
+  const STORAGE_KEY_MODEL_MATRIX = 'multiresearch_model_matrix';
+
+  const DEFAULT_MATRIX = {
+    planner: 'gemini-3.5-flash-lite',
+    researcher: 'gemini-3.5-flash-lite',
+    reviewer: 'gemini-3.5-flash-lite',
+    writer: 'gemini-3.5-flash-lite'
+  };
+
+  function openSettingsDrawer() {
+    if (drawerOverlay && settingsDrawer) {
+      drawerOverlay.classList.add('open');
+      settingsDrawer.classList.add('open');
+    }
+  }
+
+  function closeSettingsDrawer() {
+    if (drawerOverlay && settingsDrawer) {
+      drawerOverlay.classList.remove('open');
+      settingsDrawer.classList.remove('open');
+    }
+  }
+
+  function getStoredApiKeys() {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_API_KEYS);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.warn('Error reading stored API keys:', e);
+    }
+    return {};
+  }
+
+  function getActiveModelMatrix() {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY_MODEL_MATRIX);
+      if (stored) return JSON.parse(stored);
+    } catch (e) {
+      console.warn('Error reading stored model matrix:', e);
+    }
+    return { ...DEFAULT_MATRIX };
+  }
+
+  function loadSettings() {
+    const keys = getStoredApiKeys();
+    if (keyGemini) keyGemini.value = keys.gemini || '';
+    if (keyOpenai) keyOpenai.value = keys.openai || '';
+    if (keyAnthropic) keyAnthropic.value = keys.anthropic || '';
+    if (keyGroq) keyGroq.value = keys.groq || '';
+    if (keyTavily) keyTavily.value = keys.tavily || '';
+
+    const matrix = getActiveModelMatrix();
+    if (matrixPlanner) matrixPlanner.value = matrix.planner || DEFAULT_MATRIX.planner;
+    if (matrixResearcher) matrixResearcher.value = matrix.researcher || DEFAULT_MATRIX.researcher;
+    if (matrixReviewer) matrixReviewer.value = matrix.reviewer || DEFAULT_MATRIX.reviewer;
+    if (matrixWriter) matrixWriter.value = matrix.writer || DEFAULT_MATRIX.writer;
+
+    updateHeaderModelLabel(matrix);
+  }
+
+  function saveSettings() {
+    const keys = {
+      gemini: keyGemini ? keyGemini.value.trim() : '',
+      openai: keyOpenai ? keyOpenai.value.trim() : '',
+      anthropic: keyAnthropic ? keyAnthropic.value.trim() : '',
+      groq: keyGroq ? keyGroq.value.trim() : '',
+      tavily: keyTavily ? keyTavily.value.trim() : ''
+    };
+
+    const matrix = {
+      planner: matrixPlanner ? matrixPlanner.value : DEFAULT_MATRIX.planner,
+      researcher: matrixResearcher ? matrixResearcher.value : DEFAULT_MATRIX.researcher,
+      reviewer: matrixReviewer ? matrixReviewer.value : DEFAULT_MATRIX.reviewer,
+      writer: matrixWriter ? matrixWriter.value : DEFAULT_MATRIX.writer
+    };
+
+    localStorage.setItem(STORAGE_KEY_API_KEYS, JSON.stringify(keys));
+    localStorage.setItem(STORAGE_KEY_MODEL_MATRIX, JSON.stringify(matrix));
+    updateHeaderModelLabel(matrix);
+    appendLog('SYSTEM', 'Execution settings & model matrix updated');
+  }
+
+  function resetSettingsToDefaults() {
+    if (matrixPlanner) matrixPlanner.value = DEFAULT_MATRIX.planner;
+    if (matrixResearcher) matrixResearcher.value = DEFAULT_MATRIX.researcher;
+    if (matrixReviewer) matrixReviewer.value = DEFAULT_MATRIX.reviewer;
+    if (matrixWriter) matrixWriter.value = DEFAULT_MATRIX.writer;
+    applyPresetButtonHighlight('fast');
+  }
+
+  function applyPreset(type) {
+    if (type === 'fast') {
+      if (matrixPlanner) matrixPlanner.value = 'gemini-3.5-flash-lite';
+      if (matrixResearcher) matrixResearcher.value = 'gemini-3.5-flash-lite';
+      if (matrixReviewer) matrixReviewer.value = 'gemini-3.5-flash-lite';
+      if (matrixWriter) matrixWriter.value = 'gemini-3.5-flash-lite';
+      applyPresetButtonHighlight('fast');
+    } else if (type === 'quality') {
+      if (matrixPlanner) matrixPlanner.value = 'gemini-3.5-flash-lite';
+      if (matrixResearcher) matrixResearcher.value = 'gemini-3.5-flash-lite';
+      if (matrixReviewer) matrixReviewer.value = 'gemini-3.5-flash-lite';
+      if (matrixWriter) matrixWriter.value = 'claude-3-5-sonnet-20241022';
+      applyPresetButtonHighlight('quality');
+    }
+  }
+
+  function applyPresetButtonHighlight(activeType) {
+    if (presetFast) presetFast.classList.toggle('active', activeType === 'fast');
+    if (presetQuality) presetQuality.classList.toggle('active', activeType === 'quality');
+  }
+
+  function updateHeaderModelLabel(matrix) {
+    const valLlm = document.getElementById('val-llm');
+    if (valLlm && matrix) {
+      valLlm.textContent = `${matrix.researcher} → ${matrix.writer}`;
+      valLlm.title = `Planner: ${matrix.planner} | Researcher: ${matrix.researcher} | Reviewer: ${matrix.reviewer} | Writer: ${matrix.writer}`;
+    }
+  }
+
+  // Event Listeners for Settings Drawer
+  if (btnOpenSettings) btnOpenSettings.addEventListener('click', openSettingsDrawer);
+  if (btnCloseSettings) btnCloseSettings.addEventListener('click', closeSettingsDrawer);
+  if (drawerOverlay) drawerOverlay.addEventListener('click', closeSettingsDrawer);
+  if (btnSaveSettings) btnSaveSettings.addEventListener('click', () => {
+    saveSettings();
+    closeSettingsDrawer();
+  });
+  if (btnResetSettings) btnResetSettings.addEventListener('click', resetSettingsToDefaults);
+  if (presetFast) presetFast.addEventListener('click', () => applyPreset('fast'));
+  if (presetQuality) presetQuality.addEventListener('click', () => applyPreset('quality'));
+
+  document.querySelectorAll('.btn-toggle-key').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.target;
+      const input = document.getElementById(targetId);
+      if (input) {
+        if (input.type === 'password') {
+          input.type = 'text';
+          btn.textContent = '🔒';
+        } else {
+          input.type = 'password';
+          btn.textContent = '👁';
+        }
+      }
+    });
+  });
+
+  // Load saved settings on startup
+  loadSettings();
 
   function resetWorkspace() {
     eventCounter = 0;

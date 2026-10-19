@@ -95,11 +95,19 @@ def _normalize_findings(raw_findings: Any) -> list[FindingRecord]:
 
 def build_research_graph(
     llm: BaseChatModel | None = None,
+    llm_planner: BaseChatModel | None = None,
+    llm_researcher: BaseChatModel | None = None,
+    llm_reviewer: BaseChatModel | None = None,
+    llm_writer: BaseChatModel | None = None,
     evidence_collector: EvidenceCollector | None = None,
     run_manager: Any = None,
     idempotency_cache: Any = None,
 ) -> StateGraph:
     """Build and return an uncompiled StateGraph for the research system."""
+    active_planner_llm = llm_planner or llm
+    active_researcher_llm = llm_researcher or llm
+    active_reviewer_llm = llm_reviewer or llm
+    active_writer_llm = llm_writer or llm
 
     async def planner_node(state: ResearchState) -> dict[str, Any]:
         step = 1
@@ -109,7 +117,7 @@ def build_research_graph(
         logger.info("Executing Planner node", step=step, query=query, max_sub_questions=max_subqs)
 
         plan, tokens, latency = await plan_research(
-            query=query, llm=llm, max_sub_questions=max_subqs
+            query=query, llm=active_planner_llm, max_sub_questions=max_subqs
         )
 
         trace = create_step_trace(
@@ -236,7 +244,7 @@ def build_research_graph(
             output, res_tokens, res_latency = await research_subquestion(
                 sub_question=sub_question,
                 evidence_context=evidence,
-                llm=llm,
+                llm=active_researcher_llm,
             )
             findings = output.findings
             is_answered = output.is_answered
@@ -275,7 +283,7 @@ def build_research_graph(
         evaluation, rev_tokens, rev_latency = await evaluate_research(
             sub_question=sub_question,
             findings=findings,
-            llm=llm,
+            llm=active_reviewer_llm,
         )
         worker_tokens.add(
             rev_tokens.prompt_tokens,
@@ -330,7 +338,7 @@ def build_research_graph(
                 rev_output, r2_tokens, r2_latency = await research_subquestion(
                     sub_question=sub_question,
                     evidence_context=rev_evidence,
-                    llm=llm,
+                    llm=active_researcher_llm,
                 )
                 if rev_output.findings:
                     findings = rev_output.findings
@@ -420,7 +428,7 @@ def build_research_graph(
         report, tokens, latency = await write_report(
             query=query,
             findings=findings,
-            llm=llm,
+            llm=active_writer_llm,
         )
 
         trace = create_step_trace(
@@ -553,6 +561,10 @@ def build_research_graph(
 
 def compile_research_graph(
     llm: BaseChatModel | None = None,
+    llm_planner: BaseChatModel | None = None,
+    llm_researcher: BaseChatModel | None = None,
+    llm_reviewer: BaseChatModel | None = None,
+    llm_writer: BaseChatModel | None = None,
     checkpointer: Any = None,
     evidence_collector: EvidenceCollector | None = None,
     run_manager: Any = None,
@@ -561,6 +573,10 @@ def compile_research_graph(
     """Build and compile the research graph ready for execution."""
     builder = build_research_graph(
         llm=llm,
+        llm_planner=llm_planner,
+        llm_researcher=llm_researcher,
+        llm_reviewer=llm_reviewer,
+        llm_writer=llm_writer,
         evidence_collector=evidence_collector,
         run_manager=run_manager,
         idempotency_cache=idempotency_cache,

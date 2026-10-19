@@ -42,6 +42,13 @@
           <span class="pill-label">Tokens:</span>
           <span class="pill-value tabular" id="val-tokens">0</span>
         </div>
+        <button type="button" class="btn-config-settings" id="btn-open-settings" title="Agent Model Matrix & BYOK Keys">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Config & BYOK</span>
+        </button>
       </div>
     </header>
 
@@ -300,6 +307,135 @@
         </div>
       </div>
     </div>
+
+    <!-- Settings & Model Matrix Drawer (BYOK) -->
+    <div class="drawer-overlay" id="drawer-overlay"></div>
+    <aside class="settings-drawer" id="settings-drawer" aria-label="Settings and BYOK Configuration">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <h3>Agent & Model Matrix</h3>
+          <p>Assign specialized models per agent role and manage personal API keys (BYOK).</p>
+        </div>
+        <button type="button" class="btn-drawer-close" id="btn-close-settings" aria-label="Close settings">✕</button>
+      </div>
+
+      <div class="drawer-content">
+        <!-- Quick Preset Toggles -->
+        <div class="config-card">
+          <label class="config-label">Quick Presets</label>
+          <div class="preset-buttons">
+            <button type="button" class="btn-preset active" id="preset-fast">⚡ Fast & Economical</button>
+            <button type="button" class="btn-preset" id="preset-quality">🧠 Deep Synthesis</button>
+          </div>
+        </div>
+
+        <!-- Role Model Matrix -->
+        <div class="config-card">
+          <label class="config-label">Specialist Agent Model Assignment</label>
+          <div class="matrix-grid">
+            <div class="matrix-item">
+              <div class="matrix-info">
+                <span class="matrix-role">01. Planner</span>
+                <span class="matrix-desc">Decomposition & Strategy</span>
+              </div>
+              <select class="control-select matrix-select" id="matrix-planner">
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                <option value="claude-3-5-haiku-20241022">Claude 3.5 Haiku</option>
+              </select>
+            </div>
+
+            <div class="matrix-item">
+              <div class="matrix-info">
+                <span class="matrix-role">02. Researchers</span>
+                <span class="matrix-desc">Parallel Web Extraction</span>
+              </div>
+              <select class="control-select matrix-select" id="matrix-researcher">
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (Fast)</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+                <option value="llama-3.3-70b-versatile">Groq / LLaMA 3.3 70B</option>
+              </select>
+            </div>
+
+            <div class="matrix-item">
+              <div class="matrix-info">
+                <span class="matrix-role">03. Reviewer</span>
+                <span class="matrix-desc">Quality & Evidence Critic</span>
+              </div>
+              <select class="control-select matrix-select" id="matrix-reviewer">
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
+                <option value="gpt-4o-mini">GPT-4o Mini</option>
+              </select>
+            </div>
+
+            <div class="matrix-item">
+              <div class="matrix-info">
+                <span class="matrix-role">04. Writer</span>
+                <span class="matrix-desc">Synthesis & Citations</span>
+              </div>
+              <select class="control-select matrix-select" id="matrix-writer">
+                <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
+                <option value="gpt-4o">GPT-4o</option>
+                <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- BYOK API Keys -->
+        <div class="config-card">
+          <label class="config-label">API Keys (BYOK - Bring Your Own Key)</label>
+          <p class="config-hint">Stored securely in your browser (localStorage) and sent per execution. Unfilled keys automatically fallback to server environment variables.</p>
+          
+          <div class="key-inputs-list">
+            <div class="key-input-row">
+              <label for="key-gemini">Google Gemini API Key</label>
+              <div class="key-input-wrapper">
+                <input type="password" id="key-gemini" placeholder="AIzaSy... (uses server .env if empty)" autocomplete="off">
+                <button type="button" class="btn-toggle-key" data-target="key-gemini" title="Show/Hide">👁</button>
+              </div>
+            </div>
+
+            <div class="key-input-row">
+              <label for="key-openai">OpenAI API Key</label>
+              <div class="key-input-wrapper">
+                <input type="password" id="key-openai" placeholder="sk-... (for GPT models)" autocomplete="off">
+                <button type="button" class="btn-toggle-key" data-target="key-openai" title="Show/Hide">👁</button>
+              </div>
+            </div>
+
+            <div class="key-input-row">
+              <label for="key-anthropic">Anthropic API Key</label>
+              <div class="key-input-wrapper">
+                <input type="password" id="key-anthropic" placeholder="sk-ant-... (for Claude models)" autocomplete="off">
+                <button type="button" class="btn-toggle-key" data-target="key-anthropic" title="Show/Hide">👁</button>
+              </div>
+            </div>
+
+            <div class="key-input-row">
+              <label for="key-groq">Groq API Key</label>
+              <div class="key-input-wrapper">
+                <input type="password" id="key-groq" placeholder="gsk_... (for LLaMA models)" autocomplete="off">
+                <button type="button" class="btn-toggle-key" data-target="key-groq" title="Show/Hide">👁</button>
+              </div>
+            </div>
+
+            <div class="key-input-row">
+              <label for="key-tavily">Tavily Search Key (Optional)</label>
+              <div class="key-input-wrapper">
+                <input type="password" id="key-tavily" placeholder="tvly-... (uses server key if empty)" autocomplete="off">
+                <button type="button" class="btn-toggle-key" data-target="key-tavily" title="Show/Hide">👁</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="drawer-footer">
+        <button type="button" class="btn-drawer-reset" id="btn-reset-settings">Reset Defaults</button>
+        <button type="button" class="btn-drawer-save" id="btn-save-settings">Save & Close</button>
+      </div>
+    </aside>
   </div>
 
   <!-- Client Scripts -->

@@ -25,10 +25,18 @@ class Settings(BaseSettings):
             "GEMINI_API_KEY", "GOOGLE_API_KEY", "gemini_api_key", "google_api_key"
         ),
     )
+    OPENAI_API_KEY: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY", "openai_api_key"),
+    )
+    ANTHROPIC_API_KEY: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ANTHROPIC_API_KEY", "anthropic_api_key"),
+    )
 
     # Provider & Model Settings
-    LLM_PROVIDER: Literal["groq", "gemini", "ollama", "mock"] = Field(
-        default="groq",
+    LLM_PROVIDER: Literal["groq", "gemini", "openai", "anthropic", "ollama", "mock"] = Field(
+        default="gemini",
         description="Active LLM provider for agent steps",
         validation_alias=AliasChoices("LLM_PROVIDER", "llm_provider"),
     )
@@ -51,6 +59,16 @@ class Settings(BaseSettings):
         default="llama3.1:8b",
         description="Active Ollama model from .env",
         validation_alias=AliasChoices("OLLAMA_MODEL", "ollama_model"),
+    )
+    OPENAI_MODEL: str = Field(
+        default="gpt-4o-mini",
+        description="Active OpenAI model",
+        validation_alias=AliasChoices("OPENAI_MODEL", "openai_model"),
+    )
+    ANTHROPIC_MODEL: str = Field(
+        default="claude-3-5-sonnet-20241022",
+        description="Active Anthropic model",
+        validation_alias=AliasChoices("ANTHROPIC_MODEL", "anthropic_model"),
     )
     OLLAMA_BASE_URL: str = "http://localhost:11434"
 

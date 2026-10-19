@@ -163,3 +163,28 @@ async def test_static_asset_endpoint(client):
     assert resp.status_code == 200
     assert "text/css" in resp.headers.get("content-type", "")
     assert "--bg-void" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_submit_research_with_byok_and_model_matrix(client):
+    """POST /research accepts optional model_matrix and api_keys."""
+    payload = {
+        "query": "Compare LanceDB and Chroma for agentic memory",
+        "max_sub_questions": 2,
+        "model_matrix": {
+            "planner": "gemini-2.5-flash",
+            "researcher": "gemini-3.5-flash-lite",
+            "reviewer": "gemini-2.5-flash",
+            "writer": "gemini-2.5-flash",
+        },
+        "api_keys": {
+            "gemini": "AIzaSyMockKeyForTesting123456",
+            "tavily": "tvly-mock-key-testing",
+        },
+    }
+    response = await client.post("/research", json=payload)
+    assert response.status_code == 202
+    data = response.json()
+    assert "run_id" in data
+    assert data["status"] == "queued"
+

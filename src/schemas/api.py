@@ -11,6 +11,25 @@ from src.schemas.trace import StepTrace
 from src.validators.citation_validator import CitationValidationResult
 
 
+class ModelMatrixConfig(BaseModel):
+    """Configures specialized model choices for each agent role."""
+
+    planner: str | None = Field(default=None, description="Model for the Planner agent")
+    researcher: str | None = Field(default=None, description="Model for parallel Researcher workers")
+    reviewer: str | None = Field(default=None, description="Model for the Reviewer agent")
+    writer: str | None = Field(default=None, description="Model for the Report Writer agent")
+
+
+class APIKeysConfig(BaseModel):
+    """Optional ephemeral user API keys for BYOK (Bring Your Own Key) execution."""
+
+    gemini: str | None = Field(default=None, description="Google Gemini API Key")
+    openai: str | None = Field(default=None, description="OpenAI API Key")
+    anthropic: str | None = Field(default=None, description="Anthropic API Key")
+    groq: str | None = Field(default=None, description="Groq API Key")
+    tavily: str | None = Field(default=None, description="Tavily Search API Key")
+
+
 class ResearchRequest(BaseModel):
     """Payload for submitting a new background research job."""
 
@@ -41,6 +60,14 @@ class ResearchRequest(BaseModel):
     deep_scrape: bool = Field(
         default=True,
         description="Whether to perform deep HTML page scraping and provenance extraction.",
+    )
+    model_matrix: ModelMatrixConfig | None = Field(
+        default=None,
+        description="Optional custom model assignments per agent role.",
+    )
+    api_keys: APIKeysConfig | None = Field(
+        default=None,
+        description="Optional ephemeral user API keys for BYOK execution.",
     )
 
 

@@ -8,6 +8,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 
 from src.api.events import EventBroadcaster, broadcaster
+from src.core.llm import detect_provider, get_chat_model
 from src.core.logger import logger
 from src.core.telemetry import TokenUsage
 from src.graph.builder import _normalize_tokens, compile_research_graph, create_initial_state
@@ -132,9 +133,68 @@ class ResearchJobService:
 
         assert self.run_manager is not None
 
+        # Resolve specialized models for each agent role if not provided by caller (e.g. tests)
+        llm_planner = None
+        llm_researcher = None
+        llm_reviewer = None
+        llm_writer = None
+        collector = None
+
+        if llm is None:
+            user_keys = request.api_keys.model_dump() if request.api_keys else {}
+            matrix = request.model_matrix.model_dump() if request.model_matrix else {}
+
+            def _get_key_for_model(model_name: str | None) -> str | None:
+                if not model_name:
+                    return None
+                prov = detect_provider(model_name)
+                return user_keys.get(prov)
+
+            planner_model = matrix.get("planner")
+            researcher_model = matrix.get("researcher")
+            reviewer_model = matrix.get("reviewer")
+            writer_model = matrix.get("writer")
+
+            llm_planner = get_chat_model(
+                model_name=planner_model,
+                api_key=_get_key_for_model(planner_model),
+                temperature=0.0,
+            )
+            llm_researcher = get_chat_model(
+                model_name=researcher_model,
+                api_key=_get_key_for_model(researcher_model),
+                temperature=0.1,
+            )
+            llm_reviewer = get_chat_model(
+                model_name=reviewer_model,
+                api_key=_get_key_for_model(reviewer_model),
+                temperature=0.0,
+            )
+            llm_writer = get_chat_model(
+                model_name=writer_model,
+                api_key=_get_key_for_model(writer_model),
+                temperature=0.2,
+            )
+
+            tavily_user_key = user_keys.get("tavily")
+            if tavily_user_key:
+                from src.tools.evidence_collector import EvidenceCollector
+                from src.tools.search import MultiSearchClient, TavilySearchClient
+
+                collector = EvidenceCollector(
+                    search_client=MultiSearchClient(
+                        tavily_client=TavilySearchClient(api_key=tavily_user_key)
+                    )
+                )
+
         # Compile the graph bound to this run's persistence checkpointer
         graph = compile_research_graph(
             llm=llm,
+            llm_planner=llm_planner,
+            llm_researcher=llm_researcher,
+            llm_reviewer=llm_reviewer,
+            llm_writer=llm_writer,
+            evidence_collector=collector,
             checkpointer=self.checkpointer,
             run_manager=self.run_manager,
             idempotency_cache=self.idempotency_cache,

@@ -19,85 +19,151 @@ class LLMConfigurationError(Exception):
     pass
 
 
+def detect_provider(model_name: str | None, default_provider: str | None = None) -> str:
+    """Infer the LLM provider based on model naming conventions."""
+    if not model_name:
+        return (default_provider or settings.LLM_PROVIDER).lower()
+    m = model_name.lower().strip()
+    if m.startswith("gemini") or "models/gemini" in m:
+        return "gemini"
+    if m.startswith("gpt-") or m.startswith("o1") or m.startswith("o3") or "openai" in m:
+        return "openai"
+    if m.startswith("claude") or "anthropic" in m:
+        return "anthropic"
+    if (
+        m.startswith("llama")
+        or m.startswith("mixtral")
+        or m.startswith("gemma")
+        or m.startswith("qwen")
+        or "groq" in m
+    ):
+        return "groq"
+    if m == "mock":
+        return "mock"
+    return (default_provider or settings.LLM_PROVIDER).lower()
+
+
 def get_chat_model(
     provider: str | None = None,
     model_name: str | None = None,
+    api_key: str | None = None,
     temperature: float = 0.1,
     max_tokens: int | None = None,
 ) -> BaseChatModel:
     """Instantiate and return a configured BaseChatModel based on settings and available keys.
 
     Supports:
-        - "groq": Fast inference with Llama 3.3 70B (free tier).
-        - "gemini": Deep context inference with Gemini 2.0 Flash (free tier).
+        - "gemini": Google Gemini models (Gemini 2.5 Flash, 3.5 Flash Lite, etc.).
+        - "openai": OpenAI GPT models (GPT-4o, GPT-4o-mini, etc.).
+        - "anthropic": Anthropic Claude models (Claude 3.5 Sonnet, Haiku, etc.).
+        - "groq": Fast open-source inference with Llama 3.3 70B.
         - "mock": Mock chat model for testing without API keys.
     """
-    target_provider = (provider or settings.LLM_PROVIDER).lower()
+    target_provider = (provider or detect_provider(model_name)).lower()
 
-    # Intelligent fallback if preferred provider lacks key
-    if target_provider == "groq" and not settings.GROQ_API_KEY:
-        if settings.GEMINI_API_KEY:
-            logger.warning(
-                "GROQ_API_KEY not found; falling back to Gemini provider",
-                requested=target_provider,
-                fallback="gemini",
-            )
-            target_provider = "gemini"
+    if target_provider == "gemini":
+        active_key = api_key or settings.GEMINI_API_KEY
+        if not active_key:
+            if settings.GROQ_API_KEY:
+                logger.warning(
+                    "GEMINI_API_KEY not found; falling back to Groq provider",
+                    requested=target_provider,
+                    fallback="groq",
+                )
+                target_provider = "groq"
+            else:
+                raise LLMConfigurationError(
+                    "GEMINI_API_KEY is not configured. "
+                    "Please provide an API key in Settings or set GEMINI_API_KEY in .env."
+                )
         else:
+            active_model = model_name or settings.LLM_MODEL or settings.GEMINI_MODEL
+            if active_model.startswith("models/"):
+                active_model = active_model.replace("models/", "")
+            logger.info("Initializing Gemini Chat Model", provider="gemini", model=active_model)
+            return ChatGoogleGenerativeAI(
+                google_api_key=active_key,
+                model=active_model,
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                timeout=60.0,
+                max_retries=3,
+            )
+
+    if target_provider == "openai":
+        active_key = api_key or settings.OPENAI_API_KEY
+        if not active_key:
+            raise LLMConfigurationError(
+                "OPENAI_API_KEY is not configured. "
+                "Please provide an API key in Settings or set OPENAI_API_KEY in .env."
+            )
+        active_model = model_name or settings.OPENAI_MODEL
+        logger.info("Initializing OpenAI Chat Model", provider="openai", model=active_model)
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            api_key=SecretStr(active_key),
+            model=active_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    if target_provider == "anthropic":
+        active_key = api_key or settings.ANTHROPIC_API_KEY
+        if not active_key:
+            raise LLMConfigurationError(
+                "ANTHROPIC_API_KEY is not configured. "
+                "Please provide an API key in Settings or set ANTHROPIC_API_KEY in .env."
+            )
+        active_model = model_name or settings.ANTHROPIC_MODEL
+        logger.info("Initializing Anthropic Chat Model", provider="anthropic", model=active_model)
+        from langchain_anthropic import ChatAnthropic
+
+        return ChatAnthropic(
+            api_key=SecretStr(active_key),
+            model_name=active_model,
+            temperature=temperature,
+            max_tokens_to_sample=max_tokens or 4096,
+        )
+
+    if target_provider == "groq":
+        active_key = api_key or settings.GROQ_API_KEY
+        if not active_key:
+            if settings.GEMINI_API_KEY:
+                logger.warning(
+                    "GROQ_API_KEY not found; falling back to Gemini provider",
+                    requested=target_provider,
+                    fallback="gemini",
+                )
+                return get_chat_model(
+                    provider="gemini",
+                    model_name=model_name,
+                    api_key=api_key,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
             raise LLMConfigurationError(
                 "GROQ_API_KEY is not configured in .env or environment variables. "
                 "Please set GROQ_API_KEY or switch LLM_PROVIDER to gemini/mock."
             )
-
-    elif target_provider == "gemini" and not settings.GEMINI_API_KEY:
-        if settings.GROQ_API_KEY:
-            logger.warning(
-                "GEMINI_API_KEY not found; falling back to Groq provider",
-                requested=target_provider,
-                fallback="groq",
-            )
-            target_provider = "groq"
-        else:
-            raise LLMConfigurationError(
-                "GEMINI_API_KEY is not configured in .env or environment variables. "
-                "Please set GEMINI_API_KEY or switch LLM_PROVIDER to groq/mock."
-            )
-
-    if target_provider == "groq":
         active_model = model_name or settings.LLM_MODEL or settings.GROQ_MODEL
         logger.info("Initializing Groq Chat Model", provider="groq", model=active_model)
-        groq_key = SecretStr(settings.GROQ_API_KEY) if settings.GROQ_API_KEY else None
         return ChatGroq(
-            api_key=groq_key,
+            api_key=SecretStr(active_key),
             model=active_model,
             temperature=temperature,
             max_tokens=max_tokens or 4096,
         )
 
-    elif target_provider == "gemini":
-        active_model = model_name or settings.LLM_MODEL or settings.GEMINI_MODEL
-        if active_model.startswith("models/"):
-            active_model = active_model.replace("models/", "")
-        logger.info("Initializing Gemini Chat Model", provider="gemini", model=active_model)
-        return ChatGoogleGenerativeAI(
-            google_api_key=settings.GEMINI_API_KEY,
-            model=active_model,
-            temperature=temperature,
-            max_output_tokens=max_tokens,
-            timeout=60.0,
-            max_retries=3,
-        )
-
-    elif target_provider == "mock":
+    if target_provider == "mock":
         from tests.conftest import MockChatModel
 
         logger.debug("Initializing Mock Chat Model")
         return MockChatModel()
 
-    else:
-        raise LLMConfigurationError(
-            f"Unsupported LLM provider: '{target_provider}'. Supported: groq, gemini, mock."
-        )
+    raise LLMConfigurationError(
+        f"Unsupported LLM provider: '{target_provider}'. Supported: gemini, openai, anthropic, groq, mock."
+    )
 
 
 def extract_token_usage(response: Any) -> TokenUsage:

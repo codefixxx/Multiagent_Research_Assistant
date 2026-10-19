@@ -35,3 +35,48 @@ def test_token_extraction_empty_metadata():
     msg = AIMessage(content="Empty metadata")
     usage = extract_token_usage(msg)
     assert usage.total_tokens == 0
+
+
+def test_detect_provider():
+    from src.core.llm import detect_provider
+
+    assert detect_provider("gemini-2.5-flash") == "gemini"
+    assert detect_provider("models/gemini-pro") == "gemini"
+    assert detect_provider("gpt-4o") == "openai"
+    assert detect_provider("gpt-4o-mini") == "openai"
+    assert detect_provider("o1-mini") == "openai"
+    assert detect_provider("claude-3-5-sonnet") == "anthropic"
+    assert detect_provider("claude-3-haiku-20240307") == "anthropic"
+    assert detect_provider("llama-3.3-70b-versatile") == "groq"
+    assert detect_provider("mock") == "mock"
+
+
+def test_openai_instantiation_with_ephemeral_key():
+    from langchain_openai import ChatOpenAI
+
+    model = get_chat_model(
+        model_name="gpt-4o-mini",
+        api_key="sk-test-mock-openai-key-12345",
+    )
+    assert isinstance(model, ChatOpenAI)
+    assert model.model_name == "gpt-4o-mini"
+    assert model.openai_api_key.get_secret_value() == "sk-test-mock-openai-key-12345"
+
+
+def test_anthropic_instantiation_with_ephemeral_key():
+    from langchain_anthropic import ChatAnthropic
+
+    model = get_chat_model(
+        model_name="claude-3-5-sonnet-20241022",
+        api_key="sk-ant-test-mock-anthropic-key-12345",
+    )
+    assert isinstance(model, ChatAnthropic)
+    assert model.model == "claude-3-5-sonnet-20241022"
+    assert model.anthropic_api_key.get_secret_value() == "sk-ant-test-mock-anthropic-key-12345"
+
+
+def test_missing_api_key_raises_configuration_error():
+    with pytest.raises(LLMConfigurationError) as exc_info:
+        get_chat_model(provider="openai", api_key="")
+    assert "OPENAI_API_KEY is not configured" in str(exc_info.value)
+
