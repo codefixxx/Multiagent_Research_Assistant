@@ -76,7 +76,7 @@ export function App() {
   const totalCostUsd = costSummary?.total_cost_usd || 0;
 
   return (
-    <div className="min-h-screen bg-[#090a0f] text-[#ededed] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#171719] text-white flex flex-col">
       {/* 1. Header with System Telemetry */}
       <Header
         tokens={totalTokens}

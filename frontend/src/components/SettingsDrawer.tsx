@@ -76,63 +76,63 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black/60 backdrop-blur-xs flex justify-end">
-      <div className="w-full max-w-lg bg-[#101217] border-l border-white/[0.08] shadow-2xl h-full flex flex-col animate-in slide-in-from-right duration-200">
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black/75 flex justify-end">
+      <div className="w-full max-w-lg bg-[#131217] border-l border-[#222224] h-full flex flex-col animate-in slide-in-from-right duration-200">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-white/[0.08] flex items-center justify-between">
+        <div className="px-6 py-4.5 border-b border-[#222224] flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <Sliders className="w-5 h-5 text-blue-400" />
-            <h3 className="font-semibold text-base text-white">Settings & AI Models</h3>
+            <Sliders className="w-4 h-4 text-[#4a8ad6] stroke-[1.75]" />
+            <h3 className="font-semibold text-sm text-white">Settings & AI Models</h3>
           </div>
           <button
             onClick={onClose}
             aria-label="Close settings"
-            className="text-white/40 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+            className="text-[#8a8c92] hover:text-white p-1 rounded hover:bg-white/5 transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
+        <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
           {/* Quick Presets */}
-          <div className="space-y-2.5">
-            <div className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+          <div className="space-y-2">
+            <div className="text-xs font-medium text-[#8a8c92]">
               Quick Presets
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2.5">
               <button
                 type="button"
                 onClick={() => handleApplyPreset('fast')}
-                className="flex items-center space-x-2 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.08] text-white/90 transition-colors cursor-pointer text-sm font-medium"
+                className="flex items-center space-x-2 p-2.5 rounded-md bg-[#171719] hover:bg-[#212023] border border-[#222224] text-white transition-colors cursor-pointer text-xs font-medium"
               >
-                <Zap className="w-4 h-4 text-amber-400" />
+                <Zap className="w-3.5 h-3.5 text-[#d9a441]" />
                 <span>Fast & Efficient</span>
               </button>
               <button
                 type="button"
                 onClick={() => handleApplyPreset('quality')}
-                className="flex items-center space-x-2 p-3 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.08] text-white/90 transition-colors cursor-pointer text-sm font-medium"
+                className="flex items-center space-x-2 p-2.5 rounded-md bg-[#171719] hover:bg-[#212023] border border-[#222224] text-white transition-colors cursor-pointer text-xs font-medium"
               >
-                <Brain className="w-4 h-4 text-blue-400" />
+                <Brain className="w-3.5 h-3.5 text-[#4a8ad6]" />
                 <span>Deep Synthesis</span>
               </button>
             </div>
           </div>
 
           {/* Model Selection */}
-          <div className="space-y-3.5">
-            <div className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+          <div className="space-y-3">
+            <div className="text-xs font-medium text-[#8a8c92]">
               AI Model Selection
             </div>
 
             {/* Planner */}
-            <div className="space-y-1.5">
-              <label className="text-white/70 text-sm">1. Strategy & Planning</label>
+            <div className="space-y-1">
+              <label className="text-[#8a8c92] text-xs">1. Strategy & Planning</label>
               <select
                 value={matrix.planner}
                 onChange={(e) => setMatrix({ ...matrix, planner: e.target.value })}
-                className="w-full bg-[#161820] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-2 text-white text-xs focus:outline-none focus:border-[#4a8ad6] cursor-pointer"
               >
                 <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
                 <option value="gpt-4o-mini">GPT-4o Mini</option>
@@ -141,12 +141,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </div>
 
             {/* Researcher */}
-            <div className="space-y-1.5">
-              <label className="text-white/70 text-sm">2. Web Research & Gathering</label>
+            <div className="space-y-1">
+              <label className="text-[#8a8c92] text-xs">2. Web Research & Gathering</label>
               <select
                 value={matrix.researcher}
                 onChange={(e) => setMatrix({ ...matrix, researcher: e.target.value })}
-                className="w-full bg-[#161820] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-2 text-white text-xs focus:outline-none focus:border-[#4a8ad6] cursor-pointer"
               >
                 <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
                 <option value="gpt-4o-mini">GPT-4o Mini</option>
@@ -155,12 +155,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </div>
 
             {/* Reviewer */}
-            <div className="space-y-1.5">
-              <label className="text-white/70 text-sm">3. Fact & Quality Reviewer</label>
+            <div className="space-y-1">
+              <label className="text-[#8a8c92] text-xs">3. Fact & Quality Reviewer</label>
               <select
                 value={matrix.reviewer}
                 onChange={(e) => setMatrix({ ...matrix, reviewer: e.target.value })}
-                className="w-full bg-[#161820] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-2 text-white text-xs focus:outline-none focus:border-[#4a8ad6] cursor-pointer"
               >
                 <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
                 <option value="gpt-4o-mini">GPT-4o Mini</option>
@@ -168,12 +168,12 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </div>
 
             {/* Writer */}
-            <div className="space-y-1.5">
-              <label className="text-white/70 text-sm">4. Report Writing</label>
+            <div className="space-y-1">
+              <label className="text-[#8a8c92] text-xs">4. Report Writing</label>
               <select
                 value={matrix.writer}
                 onChange={(e) => setMatrix({ ...matrix, writer: e.target.value })}
-                className="w-full bg-[#161820] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-2 text-white text-xs focus:outline-none focus:border-[#4a8ad6] cursor-pointer"
               >
                 <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
                 <option value="gpt-4o">GPT-4o</option>
@@ -183,74 +183,74 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
           </div>
 
           {/* Optional API Keys */}
-          <div className="space-y-3.5 pt-3 border-t border-white/[0.06]">
-            <div className="flex items-center space-x-2 text-xs font-semibold text-white/50 uppercase tracking-wider">
-              <Key className="w-4 h-4 text-blue-400" />
+          <div className="space-y-3 pt-3 border-t border-[#1b1a1f]">
+            <div className="flex items-center space-x-1.5 text-xs font-medium text-[#8a8c92]">
+              <Key className="w-3.5 h-3.5 stroke-[1.75]" />
               <span>Custom API Keys (Optional)</span>
             </div>
-            <p className="text-xs text-white/50 leading-relaxed">
+            <p className="text-xs text-[#8a8c92]/70 leading-relaxed">
               Keys are saved locally in your browser only. Leave empty to use default server configuration.
             </p>
 
             {/* Gemini */}
-            <div className="space-y-1.5">
-              <label className="text-white/70 text-xs">Google Gemini API Key</label>
+            <div className="space-y-1">
+              <label className="text-[#8a8c92] text-xs">Google Gemini API Key</label>
               <div className="relative flex items-center">
                 <input
                   type={showKey.gemini ? 'text' : 'password'}
                   value={keys.gemini || ''}
                   onChange={(e) => setKeys({ ...keys, gemini: e.target.value })}
                   placeholder="AIzaSy... (uses server default if empty)"
-                  className="w-full bg-[#161820] border border-white/[0.08] rounded-lg px-3.5 py-2 pr-9 text-white focus:outline-none font-mono text-sm"
+                  className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-1.5 pr-8 text-white focus:outline-none text-xs tabular"
                 />
                 <button
                   type="button"
                   onClick={() => toggleShowKey('gemini')}
-                  className="absolute right-2.5 text-white/40 hover:text-white"
+                  className="absolute right-2 text-[#8a8c92] hover:text-white"
                 >
-                  {showKey.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showKey.gemini ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
 
             {/* OpenAI */}
-            <div className="space-y-1.5">
-              <label className="text-white/70 text-xs">OpenAI API Key</label>
+            <div className="space-y-1">
+              <label className="text-[#8a8c92] text-xs">OpenAI API Key</label>
               <div className="relative flex items-center">
                 <input
                   type={showKey.openai ? 'text' : 'password'}
                   value={keys.openai || ''}
                   onChange={(e) => setKeys({ ...keys, openai: e.target.value })}
                   placeholder="sk-... (for GPT models)"
-                  className="w-full bg-[#161820] border border-white/[0.08] rounded-lg px-3.5 py-2 pr-9 text-white focus:outline-none font-mono text-sm"
+                  className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-1.5 pr-8 text-white focus:outline-none text-xs tabular"
                 />
                 <button
                   type="button"
                   onClick={() => toggleShowKey('openai')}
-                  className="absolute right-2.5 text-white/40 hover:text-white"
+                  className="absolute right-2 text-[#8a8c92] hover:text-white"
                 >
-                  {showKey.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showKey.openai ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
 
             {/* Anthropic */}
-            <div className="space-y-1.5">
-              <label className="text-white/70 text-xs">Anthropic API Key</label>
+            <div className="space-y-1">
+              <label className="text-[#8a8c92] text-xs">Anthropic API Key</label>
               <div className="relative flex items-center">
                 <input
                   type={showKey.anthropic ? 'text' : 'password'}
                   value={keys.anthropic || ''}
                   onChange={(e) => setKeys({ ...keys, anthropic: e.target.value })}
                   placeholder="sk-ant-... (for Claude models)"
-                  className="w-full bg-[#161820] border border-white/[0.08] rounded-lg px-3.5 py-2 pr-9 text-white focus:outline-none font-mono text-sm"
+                  className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-1.5 pr-8 text-white focus:outline-none text-xs tabular"
                 />
                 <button
                   type="button"
                   onClick={() => toggleShowKey('anthropic')}
-                  className="absolute right-2.5 text-white/40 hover:text-white"
+                  className="absolute right-2 text-[#8a8c92] hover:text-white"
                 >
-                  {showKey.anthropic ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showKey.anthropic ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                 </button>
               </div>
             </div>
@@ -258,21 +258,21 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-white/[0.08] bg-white/[0.01] flex items-center justify-between">
+        <div className="px-6 py-3.5 border-t border-[#222224] bg-[#171719] flex items-center justify-between">
           <button
             type="button"
             onClick={handleReset}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] text-white/70 hover:text-white text-sm transition-colors cursor-pointer"
+            className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] text-[#8a8c92] hover:text-white text-xs transition-colors cursor-pointer"
           >
-            <RotateCcw className="w-4 h-4" />
+            <RotateCcw className="w-3.5 h-3.5" />
             <span>Reset Defaults</span>
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="inline-flex items-center space-x-2 px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition-colors cursor-pointer"
+            className="inline-flex items-center space-x-1.5 px-4 py-1.5 rounded-md bg-[#4a8ad6] hover:bg-[#3d77bc] text-white text-xs font-medium transition-colors cursor-pointer"
           >
-            <Save className="w-4 h-4" />
+            <Save className="w-3.5 h-3.5" />
             <span>Save & Apply</span>
           </button>
         </div>

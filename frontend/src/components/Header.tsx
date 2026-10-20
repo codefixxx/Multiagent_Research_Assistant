@@ -41,42 +41,42 @@ export const Header: React.FC<HeaderProps> = ({
   }, []);
 
   return (
-    <header className="h-18 border-b border-white/[0.08] bg-[#0c0e14]/90 backdrop-blur-md px-6 md:px-10 flex items-center justify-between sticky top-0 z-30">
+    <header className="h-16 border-b border-[#222224] bg-[#131217] px-6 lg:px-10 flex items-center justify-between sticky top-0 z-30">
       {/* Brand Identity */}
-      <div className="flex items-center space-x-3.5">
-        <div className="w-10 h-10 rounded-xl bg-blue-600/10 border border-blue-500/25 flex items-center justify-center text-blue-400 shadow-sm">
-          <Compass className="w-5 h-5" />
+      <div className="flex items-center space-x-2.5 sm:space-x-3 shrink-0">
+        <div className="text-[#4a8ad6] flex items-center justify-center shrink-0">
+          <Compass className="w-5 h-5 stroke-[1.75]" />
         </div>
         <div>
-          <div className="flex items-center space-x-2.5">
-            <h1 className="font-semibold text-base sm:text-lg tracking-tight text-white">
+          <div className="flex items-center space-x-2">
+            <h1 className="font-semibold text-sm sm:text-base tracking-tight text-white whitespace-nowrap">
               AI Research Assistant
             </h1>
-            <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium bg-white/[0.04] text-white/70 border border-white/[0.08]">
-              <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+            <span className="inline-flex items-center space-x-1.5 px-2 py-0.5 rounded-full text-xs font-medium bg-[#212023] text-[#8a8c92] border border-[#222224] shrink-0">
+              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-[#44a282]' : 'bg-[#d9a441]'}`} />
               <span>{isOnline ? 'Ready' : 'Connecting'}</span>
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-white/50 hidden sm:block">
+          <p className="text-[13px] text-[#8a8c92] hidden sm:block">
             In-depth web research, source verification, and structured reports
           </p>
         </div>
       </div>
 
       {/* Action Controls */}
-      <div className="flex items-center space-x-3 sm:space-x-4">
+      <div className="flex items-center space-x-2 sm:space-x-3">
         {/* Researching Timer */}
         {isDispatching && (
-          <div className="flex items-center space-x-2 px-3.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/25 text-blue-300 font-mono text-sm">
-            <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
+          <div className="flex items-center space-x-2 px-3 py-1.5 rounded-md bg-[#212023] border border-[#4a8ad6]/30 text-[#4a8ad6] text-[13px] font-medium tabular">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#4a8ad6]" />
             <span>Researching: {timer}</span>
           </div>
         )}
 
-        {/* Cost estimate */}
-        <div className="hidden md:flex items-center space-x-2 px-3.5 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-sm text-white/70">
+        {/* Cost estimate - shown on large screens */}
+        <div className="hidden lg:flex items-center space-x-2 px-3 py-1.5 rounded-md bg-[#212023] border border-[#222224] text-[13px] text-[#8a8c92]">
           <span>Est. Cost:</span>
-          <span className="font-mono font-medium text-white">
+          <span className="font-medium text-white tabular">
             ${costUsd.toFixed(4)}
           </span>
         </div>
@@ -85,14 +85,14 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenTrace}
-          className={`inline-flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors cursor-pointer ${
+          className={`inline-flex items-center space-x-2 px-3.5 py-1.5 rounded-md text-[13px] font-medium border transition-colors cursor-pointer ${
             hasTrace
-              ? 'bg-blue-500/10 border-blue-500/30 text-blue-300 hover:bg-blue-500/20'
-              : 'bg-white/[0.03] border-white/[0.08] text-white/70 hover:text-white hover:bg-white/[0.06]'
+              ? 'bg-[#212023] border-[#4a8ad6]/40 text-[#4a8ad6] hover:bg-[#2a292e]'
+              : 'bg-[#212023] border-[#222224] text-[#8a8c92] hover:text-white hover:bg-[#2a292e]'
           }`}
           title="View detailed execution steps, timings, and logs"
         >
-          <Activity className="w-4 h-4" />
+          <Activity className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Activity Details</span>
         </button>
 
@@ -100,11 +100,12 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenSettings}
-          className="inline-flex items-center space-x-2 px-4 py-2 rounded-lg text-sm font-medium bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-white/80 hover:text-white transition-colors cursor-pointer"
+          aria-label="Settings"
+          className="inline-flex items-center space-x-1.5 sm:space-x-2 px-3 py-1.5 rounded-md text-[13px] font-medium bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
           title="Configure AI models and optional API keys"
         >
-          <SlidersHorizontal className="w-4 h-4" />
-          <span>Settings</span>
+          <SlidersHorizontal className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Settings</span>
         </button>
       </div>
     </header>

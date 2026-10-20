@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { Search, ArrowRight, Loader2 } from 'lucide-react';
 
 interface CommandDeckProps {
   isDispatching: boolean;
@@ -33,12 +33,12 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
   };
 
   return (
-    <section className="w-full max-w-[1600px] mx-auto px-6 md:px-10 pt-8 pb-4">
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <section className="w-full max-w-[1600px] mx-auto px-6 md:px-10 pt-6 pb-3">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {/* Main Search Input */}
-        <div className="relative flex items-center rounded-2xl bg-[#12151c] border border-white/[0.12] shadow-xl focus-within:border-blue-500/70 focus-within:ring-3 focus-within:ring-blue-500/15 transition-all">
-          <div className="pl-6 text-white/40">
-            <Search className="w-6 h-6" />
+        <div className="relative flex items-center rounded-md bg-[#131217] border border-[#222224] focus-within:border-[#4a8ad6] transition-colors">
+          <div className="pl-5 text-[#8a8c92]">
+            <Search className="w-5 h-5 stroke-[1.75]" />
           </div>
           <input
             type="text"
@@ -46,81 +46,80 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Ask anything to research (e.g., tech comparisons, architecture decisions, market facts)..."
             disabled={isDispatching}
-            className="w-full bg-transparent px-5 py-5 text-base sm:text-lg text-white placeholder-white/35 focus:outline-none disabled:opacity-50"
+            className="w-full bg-transparent px-4 py-3.5 text-sm sm:text-base text-white placeholder-[#8a8c92]/60 focus:outline-none disabled:opacity-50"
           />
-          <div className="pr-4">
+          <div className="pr-3">
             <button
               type="submit"
               disabled={!query.trim() || isDispatching}
-              className="inline-flex items-center space-x-2.5 px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm sm:text-base font-medium transition-all disabled:opacity-40 disabled:hover:bg-blue-600 cursor-pointer disabled:cursor-not-allowed shadow-md hover:shadow-blue-500/20"
+              className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-md bg-[#2568b2] hover:bg-[#1e5494] text-white text-sm font-medium transition-colors disabled:bg-[#212023] disabled:text-[#a0a2a8] cursor-pointer disabled:cursor-not-allowed"
             >
               {isDispatching ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
+                  <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Researching...</span>
                 </>
               ) : (
                 <>
                   <span>Start Research</span>
-                  <ArrowRight className="w-5 h-5" />
+                  <ArrowRight className="w-4 h-4" />
                 </>
               )}
             </button>
           </div>
         </div>
 
-        {/* Options & Quick Starters */}
-        <div className="flex flex-wrap items-center justify-between gap-4 text-sm text-white/70">
+        {/* Options & Starters */}
+        <div className="flex flex-wrap items-center justify-between gap-3 text-[13px] text-[#8a8c92]">
           {/* Controls */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Depth Selector */}
-            <div className="flex items-center space-x-2 bg-white/[0.03] border border-white/[0.08] rounded-lg px-3.5 py-2">
-              <span className="text-white/50 text-sm">Depth:</span>
+            <div className="flex items-center space-x-1.5 bg-[#131217] border border-[#222224] rounded-md px-3 py-1.5">
+              <span className="text-[#8a8c92]">Depth:</span>
               <select
                 value={depth}
                 onChange={(e) => setDepth(Number(e.target.value))}
                 disabled={isDispatching}
-                className="bg-transparent text-white font-medium text-sm focus:outline-none cursor-pointer"
+                className="bg-transparent text-white font-medium text-[13px] focus:outline-none cursor-pointer"
               >
-                <option value={2} className="bg-[#12151c] text-white">Standard (2 sub-topics)</option>
-                <option value={3} className="bg-[#12151c] text-white">Comprehensive (3 sub-topics)</option>
-                <option value={4} className="bg-[#12151c] text-white">Deep Dive (4 sub-topics)</option>
+                <option value={2} className="bg-[#131217] text-white">Standard (2 sub-topics)</option>
+                <option value={3} className="bg-[#131217] text-white">Comprehensive (3 sub-topics)</option>
+                <option value={4} className="bg-[#131217] text-white">Deep Dive (4 sub-topics)</option>
               </select>
             </div>
 
             {/* Time limit */}
-            <div className="flex items-center space-x-2 bg-white/[0.03] border border-white/[0.08] rounded-lg px-3.5 py-2">
-              <span className="text-white/50 text-sm">Time:</span>
+            <div className="flex items-center space-x-1.5 bg-[#131217] border border-[#222224] rounded-md px-3 py-1.5">
+              <span className="text-[#8a8c92]">Time:</span>
               <select
                 value={timeLimit}
                 onChange={(e) => setTimeLimit(Number(e.target.value))}
                 disabled={isDispatching}
-                className="bg-transparent text-white font-medium text-sm focus:outline-none cursor-pointer"
+                className="bg-transparent text-white font-medium text-[13px] focus:outline-none cursor-pointer"
               >
-                <option value={60} className="bg-[#12151c] text-white">Quick (60s)</option>
-                <option value={120} className="bg-[#12151c] text-white">Standard (2 mins)</option>
-                <option value={180} className="bg-[#12151c] text-white">Thorough (3 mins)</option>
+                <option value={60} className="bg-[#131217] text-white">Quick (60s)</option>
+                <option value={120} className="bg-[#131217] text-white">Standard (2 mins)</option>
+                <option value={180} className="bg-[#131217] text-white">Thorough (3 mins)</option>
               </select>
             </div>
 
             {/* Read full web pages */}
-            <label className="flex items-center space-x-2.5 bg-white/[0.03] border border-white/[0.08] rounded-lg px-3.5 py-2 cursor-pointer hover:bg-white/[0.05] transition-colors">
+            <label className="flex items-center space-x-2 bg-[#131217] border border-[#222224] rounded-md px-3 py-1.5 cursor-pointer hover:bg-[#212023] transition-colors">
               <input
                 type="checkbox"
                 checked={deepScrape}
                 onChange={(e) => setDeepScrape(e.target.checked)}
                 disabled={isDispatching}
-                className="w-4 h-4 rounded border-white/20 bg-white/5 text-blue-500 focus:ring-0 cursor-pointer"
+                className="w-3.5 h-3.5 rounded border-[#222224] bg-transparent text-[#4a8ad6] focus:ring-0 cursor-pointer"
               />
-              <span className="text-white/80 select-none text-sm">Read Full Web Pages</span>
+              <span className="text-white/90 select-none text-[13px]">Read Full Web Pages</span>
             </label>
           </div>
 
-          {/* Quick Starters */}
+          {/* Starters */}
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-white/40 flex items-center space-x-1.5 hidden lg:inline-flex text-sm">
-              <Sparkles className="w-4 h-4 text-blue-400" />
-              <span>Examples:</span>
+            <span className="text-[#8a8c92] hidden lg:inline text-[13px]">
+              Presets:
             </span>
             {STARTERS.map((s, idx) => (
               <button
@@ -128,7 +127,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
                 type="button"
                 onClick={() => setQuery(s.query)}
                 disabled={isDispatching}
-                className="px-3.5 py-1.5 rounded-lg text-sm bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] text-white/70 hover:text-white transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-md text-[13px] bg-[#131217] hover:bg-[#212023] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
               >
                 {s.label}
               </button>
