@@ -41,20 +41,30 @@ export interface SubQuestionItem {
 }
 
 export interface StageCostAttribution {
-  stage: string;
-  agent_role: string;
-  model: string;
-  prompt_tokens: number;
-  completion_tokens: number;
-  latency_ms: number;
-  stage_cost_usd: number;
+  stage?: string;
+  stage_name?: string;
+  agent_role?: string;
+  model?: string;
+  model_name?: string;
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  latency_ms?: number;
+  stage_cost_usd?: number;
+  cost_usd?: number;
+  step_count?: number;
 }
 
 export interface RunCostSummary {
-  total_cost_usd: number;
-  total_prompt_tokens: number;
-  total_completion_tokens: number;
-  stage_attributions: StageCostAttribution[];
+  total_cost_usd?: number;
+  total_tokens?: number;
+  total_prompt_tokens?: number;
+  prompt_tokens?: number;
+  total_completion_tokens?: number;
+  completion_tokens?: number;
+  total_latency_ms?: number;
+  stage_attributions?: StageCostAttribution[];
+  by_stage?: Record<string, StageCostAttribution>;
 }
 
 export interface RAGScore {
