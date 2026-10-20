@@ -59,10 +59,10 @@ def evaluate_budget(
         max_wall_clock_seconds=float(dynamic_wall_clock)
         if dynamic_wall_clock
         else float(settings.MAX_WALL_CLOCK_SECONDS),
-        max_budget_tokens=int(dynamic_tokens)
+        max_budget_tokens=dynamic_tokens
         if dynamic_tokens
         else settings.MAX_BUDGET_TOKENS,
-        max_sub_questions=int(dynamic_sub_questions)
+        max_sub_questions=dynamic_sub_questions
         if dynamic_sub_questions
         else settings.MAX_SUB_QUESTIONS,
     )
