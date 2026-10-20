@@ -1,11 +1,11 @@
 """OpenTelemetry distributed tracing engine for the multi-agent research supervisor."""
 
-import os
 import threading
 import time
+from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
-from typing import Any, AsyncIterator, Iterator
+from typing import Any
 
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
@@ -13,8 +13,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import Status, StatusCode
-
-from src.core.logger import logger
 
 # Initialize singleton TracerProvider with standard multi-agent research service resource
 _resource = Resource.create({"service.name": "multiagent-research-engine"})
@@ -65,7 +63,7 @@ async def async_trace_span(
     name: str,
     run_id: str = "",
     attributes: dict[str, Any] | None = None,
-) -> AsyncIterator[dict[str, Any]]:
+) -> AsyncGenerator[dict[str, Any]]:
     """Async context manager to trace an agent execution node or tool invocation.
 
     Yields a mutable dictionary into which the caller can inject runtime
@@ -85,11 +83,11 @@ async def async_trace_span(
     with _tracer.start_as_current_span(name) as otel_span:
         for k, v in span_attrs.items():
             if v is not None:
-                otel_span.set_attribute(str(k), str(v) if not isinstance(v, (int, float, bool)) else v)
+                otel_span.set_attribute(k, str(v) if not isinstance(v, (int, float, bool)) else v)
 
         span_id = hex(otel_span.get_span_context().span_id)
-        parent_ctx = otel_span.parent
-        parent_span_id = hex(parent_ctx.span_id) if parent_ctx and parent_ctx.span_id else None
+        parent_ctx = getattr(otel_span, "parent", None)
+        parent_span_id = hex(parent_ctx.span_id) if parent_ctx and getattr(parent_ctx, "span_id", None) else None
 
         try:
             yield dynamic_context
@@ -109,7 +107,7 @@ async def async_trace_span(
             final_attrs = {**span_attrs, **dynamic_context}
             for k, v in dynamic_context.items():
                 if v is not None:
-                    otel_span.set_attribute(str(k), str(v) if not isinstance(v, (int, float, bool)) else v)
+                    otel_span.set_attribute(k, str(v) if not isinstance(v, (int, float, bool)) else v)
 
             span_record = {
                 "span_id": span_id,
@@ -132,7 +130,7 @@ def sync_trace_span(
     name: str,
     run_id: str = "",
     attributes: dict[str, Any] | None = None,
-) -> Iterator[dict[str, Any]]:
+) -> Generator[dict[str, Any]]:
     """Synchronous context manager counterpart for tool execution or sync blocks."""
     start_time_ms = time.time() * 1000.0
     start_iso = datetime.now(UTC).isoformat()
@@ -147,11 +145,11 @@ def sync_trace_span(
     with _tracer.start_as_current_span(name) as otel_span:
         for k, v in span_attrs.items():
             if v is not None:
-                otel_span.set_attribute(str(k), str(v) if not isinstance(v, (int, float, bool)) else v)
+                otel_span.set_attribute(k, str(v) if not isinstance(v, (int, float, bool)) else v)
 
         span_id = hex(otel_span.get_span_context().span_id)
-        parent_ctx = otel_span.parent
-        parent_span_id = hex(parent_ctx.span_id) if parent_ctx and parent_ctx.span_id else None
+        parent_ctx = getattr(otel_span, "parent", None)
+        parent_span_id = hex(parent_ctx.span_id) if parent_ctx and getattr(parent_ctx, "span_id", None) else None
 
         try:
             yield dynamic_context
@@ -168,6 +166,10 @@ def sync_trace_span(
             duration_ms = max(0.1, round(end_time_ms - start_time_ms, 2))
 
             final_attrs = {**span_attrs, **dynamic_context}
+            for k, v in dynamic_context.items():
+                if v is not None:
+                    otel_span.set_attribute(k, str(v) if not isinstance(v, (int, float, bool)) else v)
+
             span_record = {
                 "span_id": span_id,
                 "parent_span_id": parent_span_id,
