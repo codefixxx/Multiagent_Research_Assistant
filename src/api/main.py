@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -61,6 +61,9 @@ app.include_router(research_router)
 # Mount static asset directory for the interactive web dashboard
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    assets_dir = STATIC_DIR / "assets"
+    if assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
 
 @app.get(
@@ -123,8 +126,12 @@ async def health_check() -> dict[str, Any]:
     tags=["System"],
     summary="Service landing overview",
 )
-async def root_overview() -> dict[str, Any]:
+async def root_overview(request: Request) -> Any:
     """Service description and documentation links."""
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        index_path = STATIC_DIR / "index.html"
+        return FileResponse(str(index_path))
     return {
         "title": "Multi-Agent Research Assistant API",
         "status": "operational",

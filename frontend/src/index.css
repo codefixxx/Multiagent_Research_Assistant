@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --ground: #090a0f;
+    --surface: #101217;
+    --surface-raised: #161920;
+    --border: rgba(255, 255, 255, 0.07);
+    --border-hover: rgba(255, 255, 255, 0.14);
+    --rule: rgba(255, 255, 255, 0.05);
+    --text-primary: #f1f3f7;
+    --text-secondary: #8b929e;
+    --text-muted: #525866;
+    --accent: #3b82f6;
+    --positive: #10b981;
+    --warning: #f59e0b;
+    --negative: #ef4444;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--text-primary);
+    font-family: "Geist", "IBM Plex Sans", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .font-mono {
+    font-family: "Geist Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Typography for synthesized reports */
+.prose-dossier {
+  color: #d1d5db;
+  line-height: 1.75;
+  font-size: 0.95rem;
+}
+
+.prose-dossier h1 {
+  color: #f9fafb;
+  font-size: 1.65rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+}
+
+.prose-dossier h2 {
+  color: #f3f4f6;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 1.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.prose-dossier h3 {
+  color: #e5e7eb;
+  font-size: 1.05rem;
+  font-weight: 500;
+  margin-top: 1.25rem;
+  margin-bottom: 0.35rem;
+}
+
+.prose-dossier p {
+  margin-bottom: 0.85rem;
+}
+
+.prose-dossier ul, .prose-dossier ol {
+  margin-bottom: 0.85rem;
+  padding-left: 1.25rem;
+}
+
+.prose-dossier li {
+  margin-bottom: 0.25rem;
+}
+
+.prose-dossier blockquote {
+  border-left: 2px solid var(--accent);
+  padding-left: 1rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin: 1rem 0;
+}
+
+.prose-dossier code {
+  font-family: "Geist Mono", "IBM Plex Mono", monospace;
+  font-size: 0.85em;
+  background-color: var(--surface-raised);
+  padding: 0.15rem 0.35rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--border);
+  color: #93c5fd;
+}
+
+.prose-dossier pre {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.85rem 1rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+}
+
+.prose-dossier table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.875rem;
+}
+
+.prose-dossier th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.prose-dossier td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}

@@ -33,6 +33,7 @@ MANIFEST
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+test-results/
 htmlcov/
 .coverage
 .coverage.*
@@ -40,6 +41,12 @@ nosetests.xml
 coverage.xml
 *.cover
 *.py,cover
+
+# Node & Frontend dependencies
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
 
 # IDE, Agent, and OS files
 .agent/
