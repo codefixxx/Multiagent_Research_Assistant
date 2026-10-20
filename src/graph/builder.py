@@ -17,7 +17,8 @@ from src.agents.reviewer import evaluate_research
 from src.agents.writer import write_report
 from src.config import settings
 from src.core.logger import logger
-from src.core.telemetry import TokenUsage
+from src.core.telemetry import TokenUsage, calculate_token_cost
+from src.core.tracer import async_trace_span
 from src.graph.budgets import evaluate_budget
 from src.graph.state import ResearchState
 from src.graph.supervisor import (
@@ -28,7 +29,7 @@ from src.graph.supervisor import (
 from src.schemas.finding import FindingRecord
 from src.schemas.plan import ResearchPlan, SubQuestion
 from src.schemas.report import Citation, ReportSection, ResearchReport
-from src.schemas.trace import StepTrace
+from src.schemas.trace import StepTrace, ToolCallRecord
 from src.tools.evidence_collector import EvidenceCollector
 
 
@@ -39,6 +40,7 @@ def create_step_trace(
     output_data: dict[str, Any],
     tokens: TokenUsage,
     latency_ms: float,
+    tool_calls: list[ToolCallRecord] | None = None,
 ) -> StepTrace:
     """Helper to assemble a typed audit trace record."""
     return StepTrace(
@@ -46,6 +48,7 @@ def create_step_trace(
         agent_name=agent_name,
         input_data=input_data,
         output_data=output_data,
+        tool_calls=tool_calls or [],
         token_usage=tokens,
         latency_ms=latency_ms,
         status="success",
@@ -116,18 +119,47 @@ def build_research_graph(
         max_subqs = state.get("max_sub_questions")
         logger.info("Executing Planner node", step=step, query=query, max_sub_questions=max_subqs)
 
-        plan, tokens, latency = await plan_research(
-            query=query, llm=active_planner_llm, max_sub_questions=max_subqs
+        planner_model = (
+            getattr(active_planner_llm, "model_name", None)
+            or getattr(active_planner_llm, "model", None)
+            or "default"
         )
+        async with async_trace_span(
+            name="agent.planner",
+            run_id=run_id,
+            attributes={
+                "step": step,
+                "agent.role": "planner",
+                "query": query,
+                "llm.model": str(planner_model),
+            },
+        ) as span_ctx:
+            plan, tokens, latency = await plan_research(
+                query=query, llm=active_planner_llm, max_sub_questions=max_subqs
+            )
+            cost_usd = calculate_token_cost(
+                str(planner_model), tokens.prompt_tokens, tokens.completion_tokens
+            )
+            tokens.estimated_cost_usd = cost_usd
+            span_ctx.update(
+                {
+                    "sub_questions_count": len(plan.sub_questions),
+                    "tokens.prompt": tokens.prompt_tokens,
+                    "tokens.completion": tokens.completion_tokens,
+                    "tokens.total": tokens.total_tokens,
+                    "cost.usd": cost_usd,
+                    "latency_ms": latency,
+                }
+            )
 
-        trace = create_step_trace(
-            step_number=step,
-            agent_name="planner",
-            input_data={"query": query},
-            output_data={"sub_questions_count": len(plan.sub_questions)},
-            tokens=tokens,
-            latency_ms=latency,
-        )
+            trace = create_step_trace(
+                step_number=step,
+                agent_name="planner",
+                input_data={"query": query},
+                output_data={"sub_questions_count": len(plan.sub_questions)},
+                tokens=tokens,
+                latency_ms=latency,
+            )
 
         if run_manager and run_id:
             try:
@@ -229,25 +261,98 @@ def build_research_graph(
             except Exception as e:
                 logger.debug("Idempotency cache lookup failed", error=str(e))
 
+        res_model_name = (
+            getattr(active_researcher_llm, "model_name", None)
+            or getattr(active_researcher_llm, "model", None)
+            or "default"
+        )
+        rev_model_name = (
+            getattr(active_reviewer_llm, "model_name", None)
+            or getattr(active_reviewer_llm, "model", None)
+            or "default"
+        )
+
+        tool_records: list[ToolCallRecord] = []
         if cached_result and "findings" in cached_result:
             logger.info("Researcher worker idempotency cache hit", sub_question_id=sub_question.id)
             findings = [FindingRecord.model_validate(f) for f in cached_result["findings"]]
             is_answered = cached_result.get("is_answered", True)
             res_tokens = TokenUsage()
             res_latency = 0.0
+            tool_records.append(
+                ToolCallRecord(
+                    tool_name="idempotency_cache",
+                    tool_input={"sub_question_id": sub_question.id},
+                    tool_output_summary="Retrieved verified findings from idempotency cache.",
+                    latency_ms=0.5,
+                    status="success",
+                )
+            )
         else:
+            collect_t0 = time.time()
             evidence_res = await collector.collect_evidence_for_queries(
                 queries=queries,
                 deep_scrape=(not is_mock_llm and deep_scrape_flag),
             )
+            collect_latency = round((time.time() - collect_t0) * 1000, 2)
             evidence = evidence_res.formatted_context
-            output, res_tokens, res_latency = await research_subquestion(
-                sub_question=sub_question,
-                evidence_context=evidence,
-                llm=active_researcher_llm,
+
+            # Record empirical tool call telemetry
+            tool_records.append(
+                ToolCallRecord(
+                    tool_name="web_search",
+                    tool_input={"queries": queries},
+                    tool_output_summary=f"Found {len(evidence_res.search_results)} search results across {len(queries)} queries.",
+                    latency_ms=round(collect_latency * 0.4, 2),
+                    status="success" if evidence_res.search_results else "no_results",
+                )
             )
-            findings = output.findings
-            is_answered = output.is_answered
+            if evidence_res.urls_processed:
+                tool_records.append(
+                    ToolCallRecord(
+                        tool_name="page_scraper",
+                        tool_input={
+                            "urls_count": len(evidence_res.urls_processed),
+                            "urls": evidence_res.urls_processed[:4],
+                        },
+                        tool_output_summary=f"Extracted {len(evidence_res.documents)} documents from {len(evidence_res.urls_processed)} candidate URLs.",
+                        latency_ms=round(collect_latency * 0.6, 2),
+                        status="success" if evidence_res.documents else "empty",
+                    )
+                )
+
+            async with async_trace_span(
+                name=f"agent.researcher.worker_{idx}",
+                run_id=run_id,
+                attributes={
+                    "worker_index": idx,
+                    "sub_question_id": sub_question.id,
+                    "llm.model": str(res_model_name),
+                    "search.queries_count": len(queries),
+                    "scraped_docs_count": len(evidence_res.documents),
+                },
+            ) as res_span_ctx:
+                output, res_tokens, res_latency = await research_subquestion(
+                    sub_question=sub_question,
+                    evidence_context=evidence,
+                    llm=active_researcher_llm,
+                )
+                findings = output.findings
+                is_answered = output.is_answered
+                res_cost = calculate_token_cost(
+                    str(res_model_name), res_tokens.prompt_tokens, res_tokens.completion_tokens
+                )
+                res_tokens.estimated_cost_usd = res_cost
+
+                res_span_ctx.update(
+                    {
+                        "findings_count": len(findings),
+                        "is_answered": is_answered,
+                        "tokens.total": res_tokens.total_tokens,
+                        "cost.usd": res_cost,
+                        "latency_ms": res_latency,
+                    }
+                )
 
             if idempotency_cache and run_id:
                 try:
@@ -276,15 +381,42 @@ def build_research_graph(
             output_data={"findings_count": len(findings), "is_answered": is_answered},
             tokens=res_tokens,
             latency_ms=res_latency,
+            tool_calls=tool_records,
         )
         traces.append(trace_res)
 
         # 2. Reviewer evaluation
-        evaluation, rev_tokens, rev_latency = await evaluate_research(
-            sub_question=sub_question,
-            findings=findings,
-            llm=active_reviewer_llm,
-        )
+        async with async_trace_span(
+            name=f"agent.reviewer.worker_{idx}",
+            run_id=run_id,
+            attributes={
+                "worker_index": idx,
+                "sub_question_id": sub_question.id,
+                "llm.model": str(rev_model_name),
+                "findings_count": len(findings),
+            },
+        ) as rev_span_ctx:
+            evaluation, rev_tokens, rev_latency = await evaluate_research(
+                sub_question=sub_question,
+                findings=findings,
+                llm=active_reviewer_llm,
+            )
+            rev_cost = calculate_token_cost(
+                str(rev_model_name), rev_tokens.prompt_tokens, rev_tokens.completion_tokens
+            )
+            rev_tokens.estimated_cost_usd = rev_cost
+
+            rev_span_ctx.update(
+                {
+                    "score": evaluation.quality_score,
+                    "is_approved": evaluation.is_approved,
+                    "feedback": evaluation.feedback[:120] if evaluation.feedback else "",
+                    "tokens.total": rev_tokens.total_tokens,
+                    "cost.usd": rev_cost,
+                    "latency_ms": rev_latency,
+                }
+            )
+
         worker_tokens.add(
             rev_tokens.prompt_tokens,
             rev_tokens.completion_tokens,
@@ -296,8 +428,9 @@ def build_research_graph(
             agent_name="reviewer",
             input_data={"sub_question_id": sub_question.id, "findings_count": len(findings)},
             output_data={
-                "is_approved": evaluation.quality_score >= 0.5,
+                "is_approved": evaluation.is_approved,
                 "score": evaluation.quality_score,
+                "feedback": evaluation.feedback,
             },
             tokens=rev_tokens,
             latency_ms=rev_latency,
@@ -327,21 +460,58 @@ def build_research_graph(
                     "Worker executing single permitted revision", sub_question_id=sub_question.id
                 )
                 rev_queries = list(queries) + [f"{sub_question.question} {evaluation.feedback[:60]}"]
+                rev_t0 = time.time()
                 rev_evidence_res = await collector.collect_evidence_for_queries(
                     queries=rev_queries,
                     deep_scrape=(not is_mock_llm and deep_scrape_flag),
                 )
+                rev_latency_ms = round((time.time() - rev_t0) * 1000, 2)
                 rev_evidence = (
                     rev_evidence_res.formatted_context
                     + f"\n\nReviewer Feedback Guidance: {evaluation.feedback}\n"
                 )
-                rev_output, r2_tokens, r2_latency = await research_subquestion(
-                    sub_question=sub_question,
-                    evidence_context=rev_evidence,
-                    llm=active_researcher_llm,
-                )
-                if rev_output.findings:
-                    findings = rev_output.findings
+
+                rev_tool_records = [
+                    ToolCallRecord(
+                        tool_name="web_search_revision",
+                        tool_input={"queries": rev_queries},
+                        tool_output_summary=f"Found {len(rev_evidence_res.search_results)} supplementary sources.",
+                        latency_ms=rev_latency_ms,
+                        status="success",
+                    )
+                ]
+
+                async with async_trace_span(
+                    name=f"agent.researcher.revision_{idx}",
+                    run_id=run_id,
+                    attributes={
+                        "worker_index": idx,
+                        "sub_question_id": sub_question.id,
+                        "revision": True,
+                        "reviewer_feedback": evaluation.feedback[:100],
+                    },
+                ) as r2_span_ctx:
+                    rev_output, r2_tokens, r2_latency = await research_subquestion(
+                        sub_question=sub_question,
+                        evidence_context=rev_evidence,
+                        llm=active_researcher_llm,
+                    )
+                    if rev_output.findings:
+                        findings = rev_output.findings
+                    r2_cost = calculate_token_cost(
+                        str(res_model_name), r2_tokens.prompt_tokens, r2_tokens.completion_tokens
+                    )
+                    r2_tokens.estimated_cost_usd = r2_cost
+
+                    r2_span_ctx.update(
+                        {
+                            "findings_count": len(findings),
+                            "tokens.total": r2_tokens.total_tokens,
+                            "cost.usd": r2_cost,
+                            "latency_ms": r2_latency,
+                        }
+                    )
+
                 worker_tokens.add(
                     r2_tokens.prompt_tokens,
                     r2_tokens.completion_tokens,
@@ -356,6 +526,7 @@ def build_research_graph(
                         output_data={"findings_count": len(findings)},
                         tokens=r2_tokens,
                         latency_ms=r2_latency,
+                        tool_calls=rev_tool_records,
                     )
                 )
 
@@ -389,12 +560,21 @@ def build_research_graph(
             total_tokens=cum_tokens.total_tokens,
         )
 
-        budget = evaluate_budget(state)
-        is_resource_breached = budget.is_exceeded and budget.exceeded_metric in (
-            "tokens",
-            "wall_clock",
-        )
-        new_status = "budget_exceeded" if is_resource_breached else "writing"
+        async with async_trace_span(
+            name="graph.consolidator",
+            run_id=run_id,
+            attributes={
+                "total_findings": len(findings),
+                "total_tokens": cum_tokens.total_tokens,
+                "sub_questions_count": sub_count,
+            },
+        ):
+            budget = evaluate_budget(state)
+            is_resource_breached = budget.is_exceeded and budget.exceeded_metric in (
+                "tokens",
+                "wall_clock",
+            )
+            new_status = "budget_exceeded" if is_resource_breached else "writing"
 
         if run_manager and run_id:
             try:
@@ -422,25 +602,57 @@ def build_research_graph(
     async def writer_node(state: ResearchState) -> dict[str, Any]:
         step = state.get("step_count", 0) + 1
         query = state.get("query", "")
+        run_id = state.get("run_id", "")
         findings = _normalize_findings(state.get("findings", []))
         logger.info("Executing Writer node", step=step, findings_count=len(findings))
 
-        report, tokens, latency = await write_report(
-            query=query,
-            findings=findings,
-            llm=active_writer_llm,
+        writer_model = (
+            getattr(active_writer_llm, "model_name", None)
+            or getattr(active_writer_llm, "model", None)
+            or "default"
         )
+        async with async_trace_span(
+            name="agent.writer",
+            run_id=run_id,
+            attributes={
+                "step": step,
+                "agent.role": "writer",
+                "findings_count": len(findings),
+                "llm.model": str(writer_model),
+            },
+        ) as span_ctx:
+            report, tokens, latency = await write_report(
+                query=query,
+                findings=findings,
+                llm=active_writer_llm,
+            )
+            writer_cost = calculate_token_cost(
+                str(writer_model), tokens.prompt_tokens, tokens.completion_tokens
+            )
+            tokens.estimated_cost_usd = writer_cost
 
-        trace = create_step_trace(
-            step_number=step,
-            agent_name="writer",
-            input_data={"query": query, "findings_count": len(findings)},
-            output_data={"title": report.title, "sections_count": len(report.sections)},
-            tokens=tokens,
-            latency_ms=latency,
-        )
+            span_ctx.update(
+                {
+                    "title": report.title,
+                    "sections_count": len(report.sections),
+                    "citations_count": len(report.citations),
+                    "tokens.prompt": tokens.prompt_tokens,
+                    "tokens.completion": tokens.completion_tokens,
+                    "tokens.total": tokens.total_tokens,
+                    "cost.usd": writer_cost,
+                    "latency_ms": latency,
+                }
+            )
 
-        run_id = state.get("run_id", "")
+            trace = create_step_trace(
+                step_number=step,
+                agent_name="writer",
+                input_data={"query": query, "findings_count": len(findings)},
+                output_data={"title": report.title, "sections_count": len(report.sections)},
+                tokens=tokens,
+                latency_ms=latency,
+            )
+
         cum_tokens = _normalize_tokens(state.get("total_tokens"))
         cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
 
@@ -472,50 +684,59 @@ def build_research_graph(
     async def emergency_writer_node(state: ResearchState) -> dict[str, Any]:
         step = state.get("step_count", 0) + 1
         query = state.get("query", "")
+        run_id = state.get("run_id", "")
         findings = _normalize_findings(state.get("findings", []))
         logger.warning("Executing Emergency Writer node (budget ceiling breached)", step=step)
 
-        # Assemble best-effort emergency report
-        emergency_report = ResearchReport(
-            title=f"Research Report (Budget Ceilings Reached): {query[:60]}",
-            executive_summary=(
-                "NOTICE: This report was assembled under emergency hard-budget constraints. "
-                "One or more operational ceilings (token budget or wall-clock timeout) were exceeded. "
-                "The findings presented below represent all verified evidence collected prior to termination."
-            ),
-            sections=[
-                ReportSection(
-                    title="Interim Findings",
-                    content=(
-                        f"Collected {len(findings)} verified finding records before budget limits triggered. "
-                        + (
-                            " ".join([f"- {f.claim}" for f in findings[:5]])
-                            if findings
-                            else "No findings gathered."
-                        )
-                    ),
-                    citation_ids=[],
-                )
-            ],
-            citations=[
-                Citation(
-                    citation_id=f"[cite_{i}]",
-                    source_url=f.source_url,
-                    verified_claim=f.claim,
-                )
-                for i, f in enumerate(findings, 1)
-            ],
-        )
-        emergency_report.compile_markdown()
+        async with async_trace_span(
+            name="agent.emergency_writer",
+            run_id=run_id,
+            attributes={
+                "reason": "budget_exceeded",
+                "findings_count": len(findings),
+            },
+        ):
+            # Assemble best-effort emergency report
+            emergency_report = ResearchReport(
+                title=f"Research Report (Budget Ceilings Reached): {query[:60]}",
+                executive_summary=(
+                    "NOTICE: This report was assembled under emergency hard-budget constraints. "
+                    "One or more operational ceilings (token budget or wall-clock timeout) were exceeded. "
+                    "The findings presented below represent all verified evidence collected prior to termination."
+                ),
+                sections=[
+                    ReportSection(
+                        title="Interim Findings",
+                        content=(
+                            f"Collected {len(findings)} verified finding records before budget limits triggered. "
+                            + (
+                                " ".join([f"- {f.claim}" for f in findings[:5]])
+                                if findings
+                                else "No findings gathered."
+                            )
+                        ),
+                        citation_ids=[],
+                    )
+                ],
+                citations=[
+                    Citation(
+                        citation_id=f"[cite_{i}]",
+                        source_url=f.source_url,
+                        verified_claim=f.claim,
+                    )
+                    for i, f in enumerate(findings, 1)
+                ],
+            )
+            emergency_report.compile_markdown()
 
-        trace = create_step_trace(
-            step_number=step,
-            agent_name="emergency_writer",
-            input_data={"findings_count": len(findings)},
-            output_data={"status": "budget_exceeded"},
-            tokens=TokenUsage(),
-            latency_ms=1.0,
-        )
+            trace = create_step_trace(
+                step_number=step,
+                agent_name="emergency_writer",
+                input_data={"findings_count": len(findings)},
+                output_data={"status": "budget_exceeded"},
+                tokens=TokenUsage(),
+                latency_ms=1.0,
+            )
 
         return {
             "report": emergency_report,

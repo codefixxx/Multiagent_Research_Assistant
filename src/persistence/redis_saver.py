@@ -222,6 +222,8 @@ class RedisRunManager:
         step_count: int | None = None,
         total_tokens: int | None = None,
         error_message: str | None = None,
+        cost_summary: dict[str, Any] | None = None,
+        rag_score: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         """Atomically update run progress and status in Redis."""
         raw = await self.redis.get(self._meta_key(run_id))
@@ -241,6 +243,10 @@ class RedisRunManager:
             meta["total_tokens"] = total_tokens
         if error_message is not None:
             meta["error_message"] = error_message
+        if cost_summary is not None:
+            meta["cost_summary"] = cost_summary
+        if rag_score is not None:
+            meta["rag_score"] = rag_score
 
         if self.default_ttl and self.default_ttl > 0:
             await self.redis.set(self._meta_key(run_id), json.dumps(meta), ex=self.default_ttl)

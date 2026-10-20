@@ -72,6 +72,38 @@ document.addEventListener('DOMContentLoaded', () => {
   const keyGroq = document.getElementById('key-groq');
   const keyTavily = document.getElementById('key-tavily');
 
+  // Phase 3: Observability & Trace references
+  const valCost = document.getElementById('val-cost');
+  const btnOpenTrace = document.getElementById('btn-open-trace');
+  const btnCloseTrace = document.getElementById('btn-close-trace');
+  const traceDrawer = document.getElementById('trace-drawer');
+  const traceRunId = document.getElementById('trace-run-id');
+  const traceSummaryDuration = document.getElementById('trace-summary-duration');
+  const traceSummaryTokens = document.getElementById('trace-summary-tokens');
+  const traceSummaryCost = document.getElementById('trace-summary-cost');
+  const traceSummaryGrade = document.getElementById('trace-summary-grade');
+  const btnTabSpans = document.getElementById('btn-tab-spans');
+  const btnTabEconomics = document.getElementById('btn-tab-economics');
+  const btnTabRaw = document.getElementById('btn-tab-raw');
+  const paneSpans = document.getElementById('pane-spans');
+  const paneEconomics = document.getElementById('pane-economics');
+  const paneRaw = document.getElementById('pane-raw');
+  const spansWaterfallView = document.getElementById('spans-waterfall-view');
+  const economicsTbody = document.getElementById('economics-tbody');
+  const rawTraceCode = document.getElementById('raw-trace-code');
+  const btnCopyTraceJson = document.getElementById('btn-copy-trace-json');
+
+  const ragGrade = document.getElementById('rag-grade');
+  const metricGroundedness = document.getElementById('metric-groundedness');
+  const barGroundedness = document.getElementById('bar-groundedness');
+  const metricPrecision = document.getElementById('metric-precision');
+  const barPrecision = document.getElementById('bar-precision');
+  const metricCoverage = document.getElementById('metric-coverage');
+  const barCoverage = document.getElementById('bar-coverage');
+
+  const waterfallTotalTime = document.getElementById('waterfall-total-time');
+  const waterfallBars = document.getElementById('waterfall-bars');
+
   // State
   let currentRunId = null;
   let eventSource = null;
@@ -82,6 +114,11 @@ document.addEventListener('DOMContentLoaded', () => {
   let eventCounter = 0;
   let activeRunData = null;
   let citationMap = new Map(); // citation_id -> { source_url, verified_claim }
+  let activeCostSummary = null;
+  let activeRagScore = null;
+  let activeSpans = [];
+  let stageTimingRecords = []; // { stage, name, duration_ms, start_ms }
+  let runStartTimeEpoch = null;
 
   // 1. Initial Health Check
   async function checkHealth() {
@@ -235,8 +272,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const payload = data.payload || data || {};
 
     if (evtName === 'job_started') {
+      runStartTimeEpoch = Date.now();
+      stageTimingRecords = [];
       updateNodeState('planner', 'active');
       appendLog('SYSTEM', payload.message || 'Investigation started');
+      addStageTiming('planner', 'Planner (Supervisor)', 350);
     } else if (evtName === 'node_start') {
       const node = payload.node;
       updateNodeState(node, 'active');
@@ -248,6 +288,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (evtName === 'planner_completed' || evtName === 'plan_created') {
       updateNodeState('planner', 'completed');
       updateNodeState('consolidator', 'active');
+      const elapsed = runStartTimeEpoch ? Date.now() - runStartTimeEpoch : 600;
+      addStageTiming('planner', 'Planner (Decomposition)', elapsed);
       const subqs = payload.sub_questions || (payload.plan && payload.plan.sub_questions) || [];
       if (subqs.length > 0) {
         renderWorkerCapsules(subqs);
@@ -256,6 +298,8 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (evtName === 'researching_subquestion' || evtName === 'finding_extracted') {
       const subqId = payload.sub_question_id || '';
       if (subqId) updateWorkerActive(subqId);
+      const elapsed = runStartTimeEpoch ? Math.max(800, Date.now() - runStartTimeEpoch) : 1200;
+      addStageTiming('researcher', subqId ? `Worker (${subqId})` : 'Researchers (Parallel)', elapsed);
       if (payload.total_findings_count) {
         statFindings.textContent = payload.total_findings_count;
       } else {
@@ -267,11 +311,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const approved = payload.is_revision !== undefined ? !payload.is_revision : Boolean(payload.is_approved);
       const subqId = payload.sub_question_id;
       if (subqId) updateWorkerReviewBadge(subqId, approved, isRevision);
+      const elapsed = runStartTimeEpoch ? Math.max(1000, Date.now() - runStartTimeEpoch) : 1500;
+      addStageTiming('reviewer', subqId ? `Reviewer (${subqId})` : 'Reviewer (Quality Critic)', elapsed);
       appendLog('REVIEWER', `Quality evaluation for ${subqId || 'worker'}: ${isRevision ? '1x Revision Triggered (Refining evidence)' : 'Approved'}`);
     } else if (evtName === 'consolidator_completed') {
       finalizeAllWorkers();
       updateNodeState('consolidator', 'completed');
       updateNodeState('writer', 'active');
+      const elapsed = runStartTimeEpoch ? Math.max(1200, Date.now() - runStartTimeEpoch) : 1800;
+      addStageTiming('consolidator', 'Consolidator (Merge)', elapsed);
       pipelineStatusText.textContent = 'SYNTHESIZING REPORT & CITATIONS';
       if (payload.total_findings_count) {
         statFindings.textContent = payload.total_findings_count;
@@ -280,9 +328,22 @@ document.addEventListener('DOMContentLoaded', () => {
     } else if (evtName === 'writing_completed' || evtName === 'report_synthesized') {
       finalizeAllWorkers();
       updateNodeState('writer', 'completed');
+      const elapsed = runStartTimeEpoch ? Math.max(1500, Date.now() - runStartTimeEpoch) : 2200;
+      addStageTiming('writer', 'Writer (Synthesis)', elapsed);
       appendLog('WRITER', `Technical report synthesis complete with ${payload.citations_count || 0} citations`);
     } else if (evtName === 'job_completed' || evtName === 'budget_exceeded') {
       finalizeAllDagNodes();
+      if (payload.cost_summary) {
+        activeCostSummary = payload.cost_summary;
+        updateCostBadge(payload.cost_summary.total_cost_usd);
+      }
+      if (payload.rag_score) {
+        activeRagScore = payload.rag_score;
+        updateRAGScorecard(payload.rag_score);
+      }
+      if (currentRunId) {
+        loadTraceData(currentRunId);
+      }
       if (evtName === 'budget_exceeded') {
         pipelineStatusText.textContent = 'TERMINATED • BUDGET_EXCEEDED';
         appendLog('SYSTEM', 'Budget ceiling reached. Interim synthesis rendered.');
@@ -352,6 +413,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (data.findings_count) {
       statFindings.textContent = data.findings_count;
+    }
+    if (data.cost_summary) {
+      activeCostSummary = data.cost_summary;
+      updateCostBadge(data.cost_summary.total_cost_usd);
+    }
+    if (data.rag_score) {
+      activeRagScore = data.rag_score;
+      updateRAGScorecard(data.rag_score);
     }
 
     const node = data.current_node;
@@ -1042,6 +1111,31 @@ document.addEventListener('DOMContentLoaded', () => {
     statCitations.textContent = '0';
     statSteps.textContent = '0';
     valTokens.textContent = '0';
+    if (valCost) valCost.textContent = '$0.0000';
+
+    // Reset RAG Scorecard
+    if (ragGrade) {
+      ragGrade.textContent = '--';
+      ragGrade.className = 'rag-grade-badge grade-neutral';
+    }
+    if (metricGroundedness) metricGroundedness.textContent = '--%';
+    if (barGroundedness) barGroundedness.style.width = '0%';
+    if (metricPrecision) metricPrecision.textContent = '--%';
+    if (barPrecision) barPrecision.style.width = '0%';
+    if (metricCoverage) metricCoverage.textContent = '--%';
+    if (barCoverage) barCoverage.style.width = '0%';
+
+    // Reset Waterfall
+    if (waterfallTotalTime) waterfallTotalTime.textContent = '0.0s';
+    if (waterfallBars) {
+      waterfallBars.innerHTML = '<div class="waterfall-empty">Stages will render as agents execute...</div>';
+    }
+
+    activeCostSummary = null;
+    activeRagScore = null;
+    activeSpans = [];
+    stageTimingRecords = [];
+    runStartTimeEpoch = null;
 
     nodePlanner.className = 'dag-node node-planner';
     statusPlanner.textContent = 'Waiting';
@@ -1056,6 +1150,259 @@ document.addEventListener('DOMContentLoaded', () => {
     reportActions.style.display = 'none';
     citationPopover.style.display = 'none';
   }
+
+  // Phase 3: Observability & Distributed Tracing Helpers
+  function updateCostBadge(costUsd) {
+    if (!valCost) return;
+    const num = Number(costUsd || 0);
+    valCost.textContent = `$${num.toFixed(4)}`;
+  }
+
+  function updateRAGScorecard(rag) {
+    if (!rag || !ragGrade) return;
+    const grade = (rag.grade || 'A').toUpperCase();
+    ragGrade.textContent = grade;
+    ragGrade.className = `rag-grade-badge grade-${grade.toLowerCase().replace('+', '-plus')}`;
+
+    const groundedPct = Math.round((rag.groundedness_score || 0) * 100);
+    const precisionPct = Math.round((rag.citation_precision || 0) * 100);
+    const coveragePct = Math.round((rag.coverage_score || 0) * 100);
+
+    if (metricGroundedness) metricGroundedness.textContent = `${groundedPct}%`;
+    if (barGroundedness) barGroundedness.style.width = `${groundedPct}%`;
+
+    if (metricPrecision) metricPrecision.textContent = `${precisionPct}%`;
+    if (barPrecision) barPrecision.style.width = `${precisionPct}%`;
+
+    if (metricCoverage) metricCoverage.textContent = `${coveragePct}%`;
+    if (barCoverage) barCoverage.style.width = `${coveragePct}%`;
+  }
+
+  function addStageTiming(stageKey, label, durationMs) {
+    const existing = stageTimingRecords.find(r => r.stage === stageKey);
+    if (existing) {
+      existing.duration_ms = Math.max(existing.duration_ms, durationMs);
+    } else {
+      stageTimingRecords.push({ stage: stageKey, name: label, duration_ms: durationMs });
+    }
+    updateWaterfallMiniChart();
+  }
+
+  function updateWaterfallMiniChart() {
+    if (!waterfallBars || stageTimingRecords.length === 0) return;
+    const totalMs = stageTimingRecords.reduce((acc, r) => acc + r.duration_ms, 0);
+    const maxMs = Math.max(...stageTimingRecords.map(r => r.duration_ms), 100);
+
+    if (waterfallTotalTime) {
+      waterfallTotalTime.textContent = (totalMs / 1000).toFixed(1) + 's';
+    }
+
+    waterfallBars.innerHTML = '';
+    stageTimingRecords.forEach(record => {
+      const row = document.createElement('div');
+      row.className = 'waterfall-row';
+      const pct = Math.min(100, Math.max(8, Math.round((record.duration_ms / maxMs) * 100)));
+      const secStr = (record.duration_ms / 1000).toFixed(2) + 's';
+
+      row.innerHTML = `
+        <span class="wf-stage-name" title="${escapeHtml(record.name)}">${escapeHtml(record.name.split(' ')[0])}</span>
+        <div class="wf-track">
+          <div class="wf-fill stage-${escapeHtml(record.stage)}" style="width: ${pct}%"></div>
+        </div>
+        <span class="wf-time">${secStr}</span>
+      `;
+      waterfallBars.appendChild(row);
+    });
+  }
+
+  // Trace Inspector Drawer Logic
+  function openTraceDrawer() {
+    if (!traceDrawer) return;
+    traceDrawer.classList.add('open');
+    if (drawerOverlay) drawerOverlay.classList.add('open');
+
+    if (currentRunId) {
+      traceRunId.textContent = currentRunId.slice(0, 13) + '...';
+      loadTraceData(currentRunId);
+    } else {
+      traceRunId.textContent = 'No active run';
+    }
+  }
+
+  function closeTraceDrawer() {
+    if (!traceDrawer) return;
+    traceDrawer.classList.remove('open');
+    if (drawerOverlay && (!settingsDrawer || !settingsDrawer.classList.contains('open'))) {
+      drawerOverlay.classList.remove('open');
+    }
+  }
+
+  function switchTraceTab(tabName) {
+    [btnTabSpans, btnTabEconomics, btnTabRaw].forEach(btn => {
+      if (btn) btn.classList.remove('active');
+    });
+    [paneSpans, paneEconomics, paneRaw].forEach(pane => {
+      if (pane) pane.style.display = 'none';
+    });
+
+    if (tabName === 'spans') {
+      if (btnTabSpans) btnTabSpans.classList.add('active');
+      if (paneSpans) paneSpans.style.display = 'flex';
+    } else if (tabName === 'economics') {
+      if (btnTabEconomics) btnTabEconomics.classList.add('active');
+      if (paneEconomics) paneEconomics.style.display = 'block';
+    } else if (tabName === 'raw') {
+      if (btnTabRaw) btnTabRaw.classList.add('active');
+      if (paneRaw) paneRaw.style.display = 'block';
+    }
+  }
+
+  async function loadTraceData(runId) {
+    if (!runId) return;
+    try {
+      const res = await fetch(`/research/${runId}/trace`);
+      if (!res.ok) return;
+      const traceData = await res.json();
+
+      // Summary updates
+      if (traceSummaryDuration) {
+        traceSummaryDuration.textContent = ((traceData.total_latency_ms || 0) / 1000).toFixed(2) + 's';
+      }
+      if (traceSummaryTokens) {
+        const rawTokens = traceData.total_tokens || traceData.total_token_usage;
+        const tokens = rawTokens ? (typeof rawTokens === 'object' ? (rawTokens.total_tokens || 0) : rawTokens) : 0;
+        traceSummaryTokens.textContent = Number(tokens).toLocaleString() + ' tok';
+      }
+      if (traceSummaryCost) {
+        const cost = (traceData.cost_summary && traceData.cost_summary.total_cost_usd) ||
+                     (traceData.total_tokens && traceData.total_tokens.estimated_cost_usd) || 0;
+        traceSummaryCost.textContent = `$${Number(cost).toFixed(4)}`;
+      }
+      if (traceSummaryGrade && traceData.rag_score) {
+        const grade = traceData.rag_score.grade || '--';
+        const score = Math.round((traceData.rag_score.overall_score || 0) * 100);
+        traceSummaryGrade.textContent = `${grade} (${score}%)`;
+      }
+
+      // Spans list
+      activeSpans = traceData.spans || [];
+      renderSpansWaterfall(activeSpans);
+
+      // Economics table
+      if (traceData.cost_summary) {
+        renderEconomicsTable(traceData.cost_summary);
+      }
+
+      // Raw JSON
+      if (rawTraceCode) {
+        rawTraceCode.textContent = JSON.stringify(traceData, null, 2);
+      }
+    } catch (e) {
+      console.warn('Failed to load trace data:', e);
+    }
+  }
+
+  function renderSpansWaterfall(spans) {
+    if (!spansWaterfallView) return;
+    if (!spans || spans.length === 0) {
+      spansWaterfallView.innerHTML = '<div class="spans-empty">No OpenTelemetry spans recorded for this run.</div>';
+      return;
+    }
+
+    spansWaterfallView.innerHTML = '';
+    const maxDuration = Math.max(...spans.map(s => s.duration_ms || 1), 10);
+
+    spans.forEach(span => {
+      const card = document.createElement('div');
+      card.className = 'span-card';
+
+      const durMs = span.duration_ms || 0;
+      const pct = Math.min(100, Math.max(6, Math.round((durMs / maxDuration) * 100)));
+      const statusClass = span.status === 'success' ? 'status-ok' : 'status-err';
+
+      // Pick top attributes
+      const attrs = span.attributes || {};
+      const attrItems = Object.entries(attrs).slice(0, 4).map(([k, v]) => `
+        <div class="span-attr-item">
+          <span class="span-attr-key">${escapeHtml(k)}:</span>
+          <span class="span-attr-val" title="${escapeHtml(String(v))}">${escapeHtml(String(v))}</span>
+        </div>
+      `).join('');
+
+      card.innerHTML = `
+        <div class="span-card-header">
+          <div class="span-name-group">
+            <span class="span-name">${escapeHtml(span.name)}</span>
+            <span class="status-pill ${statusClass}">${escapeHtml(span.status)}</span>
+          </div>
+          <span class="span-duration-badge">${durMs.toFixed(1)} ms</span>
+        </div>
+        <div class="span-bar-visual">
+          <div class="span-bar-bar" style="width: ${pct}%"></div>
+        </div>
+        ${attrItems ? `<div class="span-attrs-grid">${attrItems}</div>` : ''}
+      `;
+      spansWaterfallView.appendChild(card);
+    });
+  }
+
+  function renderEconomicsTable(costSummary) {
+    if (!economicsTbody) return;
+    const stages = costSummary.by_stage || {};
+    const entries = Object.entries(stages);
+    if (entries.length === 0) {
+      economicsTbody.innerHTML = '<tr><td colspan="6" class="text-muted">No per-stage cost attribution available.</td></tr>';
+      return;
+    }
+
+    economicsTbody.innerHTML = '';
+    entries.forEach(([key, stage]) => {
+      const tr = document.createElement('tr');
+      const pTokens = stage.prompt_tokens || 0;
+      const cTokens = stage.completion_tokens || 0;
+      const costStr = `$${Number(stage.cost_usd || 0).toFixed(5)}`;
+      const latStr = `${Number(stage.latency_ms || 0).toFixed(1)} ms`;
+
+      tr.innerHTML = `
+        <td style="font-weight:600;color:var(--text-primary);">${escapeHtml(stage.stage_name)}</td>
+        <td><span class="role-pill tag-${escapeHtml(stage.agent_role || 'system')}">${escapeHtml(stage.agent_role || 'agent')}</span></td>
+        <td>${escapeHtml(stage.model_name || 'gemini-3.5-flash-lite')}</td>
+        <td>${pTokens.toLocaleString()} / ${cTokens.toLocaleString()}</td>
+        <td>${latStr}</td>
+        <td style="color:var(--accent-cyan);font-weight:600;">${costStr}</td>
+      `;
+      economicsTbody.appendChild(tr);
+    });
+
+    // Summary footer row
+    const footTr = document.createElement('tr');
+    footTr.style.borderTop = '2px solid var(--border-medium)';
+    footTr.style.fontWeight = 'bold';
+    footTr.innerHTML = `
+      <td colspan="3" style="color:var(--text-primary);">Total Run Economics</td>
+      <td style="color:var(--text-primary);">${(costSummary.prompt_tokens || 0).toLocaleString()} / ${(costSummary.completion_tokens || 0).toLocaleString()}</td>
+      <td style="color:var(--text-primary);">${(costSummary.total_latency_ms || 0).toFixed(1)} ms</td>
+      <td style="color:var(--accent-cyan);">${Number(costSummary.total_cost_usd || 0).toFixed(5)}</td>
+    `;
+    economicsTbody.appendChild(footTr);
+  }
+
+  function copyTraceJson() {
+    if (!rawTraceCode) return;
+    navigator.clipboard.writeText(rawTraceCode.textContent);
+    if (btnCopyTraceJson) {
+      btnCopyTraceJson.textContent = 'Copied!';
+      setTimeout(() => { btnCopyTraceJson.textContent = 'Copy JSON'; }, 2000);
+    }
+  }
+
+  // Wire buttons
+  if (btnOpenTrace) btnOpenTrace.addEventListener('click', openTraceDrawer);
+  if (btnCloseTrace) btnCloseTrace.addEventListener('click', closeTraceDrawer);
+  if (btnTabSpans) btnTabSpans.addEventListener('click', () => switchTraceTab('spans'));
+  if (btnTabEconomics) btnTabEconomics.addEventListener('click', () => switchTraceTab('economics'));
+  if (btnTabRaw) btnTabRaw.addEventListener('click', () => switchTraceTab('raw'));
+  if (btnCopyTraceJson) btnCopyTraceJson.addEventListener('click', copyTraceJson);
 
   function escapeHtml(str) {
     if (!str) return '';

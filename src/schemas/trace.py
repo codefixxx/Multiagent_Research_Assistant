@@ -42,3 +42,6 @@ class AuditLog(BaseModel):
     total_latency_ms: float = 0.0
     status: str = "completed"
     error: str | None = None
+    cost_summary: dict[str, Any] | None = None
+    rag_score: dict[str, Any] | None = None
+    spans: list[dict[str, Any]] = Field(default_factory=list)

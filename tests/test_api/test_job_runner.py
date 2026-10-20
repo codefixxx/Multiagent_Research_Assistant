@@ -29,18 +29,20 @@ async def test_job_service_lifecycle_and_events(mock_llm):
 
     listener_task = asyncio.create_task(_listen())
 
-    await service.start_job(run_id=run_id, request=request)
+    await service.start_job(run_id=run_id, request=request, mode="embedded")
     task = service._active_tasks.get(run_id)
     if task:
         await task
 
-    # Give listener a brief moment to process
-    await asyncio.sleep(0.1)
-    listener_task.cancel()
+    # Wait for listener to receive completion event
     try:
-        await listener_task
-    except asyncio.CancelledError:
-        pass
+        await asyncio.wait_for(listener_task, timeout=5.0)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        listener_task.cancel()
+        try:
+            await listener_task
+        except asyncio.CancelledError:
+            pass
 
     # Verify event types received
     all_events_text = "".join(events_received)
@@ -61,7 +63,7 @@ async def test_job_service_cancellation(mock_llm):
     request = ResearchRequest(query="Test query for cancellation")
 
     # Start job
-    await service.start_job(run_id=run_id, request=request)
+    await service.start_job(run_id=run_id, request=request, mode="embedded")
     # Cancel immediately
     cancelled = await service.cancel_job(run_id)
     assert cancelled is True

@@ -12,6 +12,8 @@ async def setup_mock_service(mock_llm):
     """Ensure job service uses the mock chat model during API tests."""
     job_service.default_llm = mock_llm
     await job_service.initialize(force_new=True)
+    yield
+    job_service.default_llm = None
 
 
 @pytest.fixture

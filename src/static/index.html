@@ -47,6 +47,16 @@
           <span class="pill-label">Tokens:</span>
           <span class="pill-value tabular" id="val-tokens">0</span>
         </div>
+        <div class="telemetry-pill" id="telemetry-cost" title="Cumulative Token Spend in USD">
+          <span class="pill-label">Est. Cost:</span>
+          <span class="pill-value tabular text-accent" id="val-cost">$0.0000</span>
+        </div>
+        <button type="button" class="btn-config-settings btn-inspect-trace" id="btn-open-trace" title="Inspect Distributed Traces & Telemetry Waterfall">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <span>Inspect Trace</span>
+        </button>
         <button type="button" class="btn-config-settings" id="btn-open-settings" title="Agent Model Matrix & BYOK Keys">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
@@ -212,6 +222,60 @@
             <div class="stat-box">
               <span class="stat-num tabular" id="stat-steps">0</span>
               <span class="stat-desc">Supersteps</span>
+            </div>
+          </div>
+
+          <!-- Phase 3: Automated RAG Quality Scorecard -->
+          <div class="rag-scorecard-card" id="rag-scorecard">
+            <div class="scorecard-header">
+              <div class="scorecard-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                </svg>
+                <span>RAG Quality Scorecard</span>
+              </div>
+              <span class="rag-grade-badge grade-neutral" id="rag-grade">--</span>
+            </div>
+            <div class="scorecard-metrics">
+              <div class="metric-item">
+                <div class="metric-header">
+                  <span class="metric-label">Groundedness</span>
+                  <span class="metric-val" id="metric-groundedness">--%</span>
+                </div>
+                <div class="metric-bar-bg"><div class="metric-bar-fill" id="bar-groundedness" style="width: 0%"></div></div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-header">
+                  <span class="metric-label">Citation Precision</span>
+                  <span class="metric-val" id="metric-precision">--%</span>
+                </div>
+                <div class="metric-bar-bg"><div class="metric-bar-fill" id="bar-precision" style="width: 0%"></div></div>
+              </div>
+              <div class="metric-item">
+                <div class="metric-header">
+                  <span class="metric-label">Subquestion Coverage</span>
+                  <span class="metric-val" id="metric-coverage">--%</span>
+                </div>
+                <div class="metric-bar-bg"><div class="metric-bar-fill" id="bar-coverage" style="width: 0%"></div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Phase 3: Latency Waterfall Mini Chart -->
+          <div class="waterfall-card" id="waterfall-card">
+            <div class="waterfall-header">
+              <div class="waterfall-title">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="20" x2="18" y2="10"></line>
+                  <line x1="12" y1="20" x2="12" y2="4"></line>
+                  <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                <span>Latency Waterfall</span>
+              </div>
+              <span class="waterfall-total tabular" id="waterfall-total-time">0.0s</span>
+            </div>
+            <div class="waterfall-bars" id="waterfall-bars">
+              <div class="waterfall-empty">Stages will render as agents execute...</div>
             </div>
           </div>
 
@@ -439,6 +503,85 @@
       <div class="drawer-footer">
         <button type="button" class="btn-drawer-reset" id="btn-reset-settings">Reset Defaults</button>
         <button type="button" class="btn-drawer-save" id="btn-save-settings">Save & Close</button>
+      </div>
+    </aside>
+
+    <!-- Phase 3: Trace Inspector & Observability Drawer -->
+    <aside class="trace-drawer" id="trace-drawer" aria-label="Distributed Trace & Telemetry Inspector">
+      <div class="drawer-header">
+        <div class="drawer-title-group">
+          <div class="trace-title-row">
+            <h3>Distributed Trace & Telemetry</h3>
+            <span class="trace-run-badge tabular" id="trace-run-id">No Active Run</span>
+          </div>
+          <p>Inspect OpenTelemetry spans, stage token economics, and empirical RAG score breakdown.</p>
+        </div>
+        <button type="button" class="btn-drawer-close" id="btn-close-trace" aria-label="Close trace inspector">✕</button>
+      </div>
+
+      <!-- Run Summary Highlights Strip -->
+      <div class="trace-summary-strip">
+        <div class="summary-pill">
+          <span class="summary-label">Total Duration</span>
+          <span class="summary-value tabular" id="trace-summary-duration">0.0s</span>
+        </div>
+        <div class="summary-pill">
+          <span class="summary-label">Token Spend</span>
+          <span class="summary-value tabular" id="trace-summary-tokens">0 tok</span>
+        </div>
+        <div class="summary-pill">
+          <span class="summary-label">Est. Cost</span>
+          <span class="summary-value tabular text-accent" id="trace-summary-cost">$0.0000</span>
+        </div>
+        <div class="summary-pill">
+          <span class="summary-label">RAG Quality</span>
+          <span class="summary-value" id="trace-summary-grade">--</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs inside Trace Drawer -->
+      <div class="trace-tabs">
+        <button type="button" class="trace-tab active" data-tab="tab-spans" id="btn-tab-spans">OpenTelemetry Spans</button>
+        <button type="button" class="trace-tab" data-tab="tab-economics" id="btn-tab-economics">Cost Attribution</button>
+        <button type="button" class="trace-tab" data-tab="tab-raw" id="btn-tab-raw">Raw Trace JSON</button>
+      </div>
+
+      <div class="drawer-content trace-content">
+        <!-- Tab 1: Spans & Waterfall -->
+        <div class="trace-pane active" id="pane-spans">
+          <div class="spans-waterfall-view" id="spans-waterfall-view">
+            <div class="spans-empty">Run an investigation to view distributed OpenTelemetry spans.</div>
+          </div>
+        </div>
+
+        <!-- Tab 2: Cost Attribution -->
+        <div class="trace-pane" id="pane-economics" style="display: none;">
+          <div class="economics-table-container">
+            <table class="economics-table" id="economics-table">
+              <thead>
+                <tr>
+                  <th>Stage / Agent</th>
+                  <th>Role</th>
+                  <th>Model</th>
+                  <th>Tokens (P / C)</th>
+                  <th>Latency</th>
+                  <th>Cost (USD)</th>
+                </tr>
+              </thead>
+              <tbody id="economics-tbody">
+                <tr><td colspan="6" class="text-muted">No cost data recorded yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 3: Raw JSON -->
+        <div class="trace-pane" id="pane-raw" style="display: none;">
+          <div class="raw-actions">
+            <button type="button" class="action-btn" id="btn-copy-trace-json">Copy JSON</button>
+          </div>
+          <pre class="raw-json-viewer"><code id="raw-trace-code">// OpenTelemetry spans JSON will appear here...</code></pre>
+        </div>
       </div>
     </aside>
   </div>

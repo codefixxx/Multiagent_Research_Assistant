@@ -11,7 +11,8 @@ from src.api.events import EventBroadcaster, broadcaster
 from src.config import settings
 from src.core.llm import detect_provider, get_chat_model
 from src.core.logger import logger
-from src.core.telemetry import TokenUsage
+from src.core.telemetry import RunCostSummary, StageCostAttribution, TokenUsage
+from src.core.tracer import get_run_spans
 from src.graph.builder import _normalize_tokens, compile_research_graph, create_initial_state
 from src.persistence.queue import RedisJobQueue
 from src.persistence.redis_saver import (
@@ -29,6 +30,7 @@ from src.validators.citation_validator import (
     validate_report_citations,
     validate_report_citations_async,
 )
+from src.validators.rag_scorer import RAGQualityScore, calculate_rag_quality_score
 
 
 def _unwrap_lc(d: Any) -> Any:
@@ -105,9 +107,9 @@ class ResearchJobService:
 
         effective_mode = mode or settings.WORKER_MODE
 
-        # When running in decoupled mode and not overridden with an in-memory test LLM,
-        # enqueue job payload onto Redis queue for background worker execution (<10ms).
-        if effective_mode == "decoupled" and llm_override is None:
+        # When running in decoupled mode, enqueue job payload onto Redis queue
+        # for background worker execution (<10ms).
+        if effective_mode == "decoupled":
             assert self.queue is not None
             await self.queue.enqueue(run_id=run_id, request=request)
             await self.broadcaster.broadcast(
@@ -425,13 +427,38 @@ class ResearchJobService:
                 report_dict: dict[str, Any] = final_report.model_dump(mode="json")
                 await self.run_manager.save_report(run_id=run_id, report_data=report_dict)
 
-            # Assemble & Persist Audit Log
+            # Assemble Spans, Cost Attribution, and RAG Quality Score
+            spans = get_run_spans(run_id)
             raw_traces = merged_state.get("audit_traces", [])
             step_traces = [
                 t if isinstance(t, StepTrace) else StepTrace.model_validate(t) for t in raw_traces
             ]
             total_tokens = _normalize_tokens(merged_state.get("total_tokens"))
             total_latency = (time.time() - start_time) * 1000.0
+
+            # Calculate StageCostAttribution and RunCostSummary
+            cost_summary = RunCostSummary()
+            for st in step_traces:
+                st_key = f"{st.agent_name}_{st.step_number}"
+                cost_summary.add_stage(
+                    StageCostAttribution(
+                        stage_name=st_key,
+                        agent_role=st.agent_name,
+                        prompt_tokens=st.token_usage.prompt_tokens,
+                        completion_tokens=st.token_usage.completion_tokens,
+                        total_tokens=st.token_usage.total_tokens,
+                        cost_usd=st.token_usage.estimated_cost_usd,
+                        latency_ms=st.latency_ms,
+                    )
+                )
+
+            # Calculate automated RAG Quality Score
+            rag_score = calculate_rag_quality_score(
+                report=final_report,
+                findings=findings_obj_list,
+                validation_result=citation_validation,
+                plan=merged_state.get("plan"),
+            )
 
             audit_log = AuditLog(
                 run_id=run_id,
@@ -440,6 +467,9 @@ class ResearchJobService:
                 total_token_usage=total_tokens,
                 total_latency_ms=total_latency,
                 status=final_status,
+                cost_summary=cost_summary.model_dump(mode="json"),
+                rag_score=rag_score.model_dump(mode="json"),
+                spans=spans,
             )
             await self.run_manager.save_audit_log(
                 run_id=run_id,
@@ -453,6 +483,8 @@ class ResearchJobService:
                 current_node="done",
                 step_count=merged_state.get("step_count", len(step_traces)),
                 total_tokens=total_tokens.total_tokens,
+                cost_summary=cost_summary.model_dump(mode="json"),
+                rag_score=rag_score.model_dump(mode="json"),
             )
 
             # Broadcast final completion event
@@ -475,6 +507,9 @@ class ResearchJobService:
                         else 0
                     ),
                     "citation_validation": citation_validation.model_dump(mode="json") if citation_validation else None,
+                    "cost_summary": cost_summary.model_dump(mode="json"),
+                    "rag_score": rag_score.model_dump(mode="json"),
+                    "spans_count": len(spans),
                 },
             )
             await self.run_manager.apply_ttl(run_id)
@@ -557,6 +592,13 @@ class ResearchJobService:
             except Exception:
                 pass
 
+        cost_summary_dict = meta.get("cost_summary") or (
+            raw_audit.get("cost_summary") if raw_audit and isinstance(raw_audit, dict) else None
+        )
+        rag_score_dict = meta.get("rag_score") or (
+            raw_audit.get("rag_score") if raw_audit and isinstance(raw_audit, dict) else None
+        )
+
         return ResearchStatusResponse(
             run_id=run_id,
             query=meta.get("query", ""),
@@ -567,6 +609,12 @@ class ResearchJobService:
             total_tokens=meta.get("total_tokens", 0),
             findings_count=findings_count,
             report=report_obj,
+            cost_summary=RunCostSummary.model_validate(cost_summary_dict)
+            if cost_summary_dict
+            else None,
+            rag_score=RAGQualityScore.model_validate(rag_score_dict)
+            if rag_score_dict
+            else None,
             error_message=meta.get("error_message"),
             created_at=meta.get("created_at"),
             updated_at=meta.get("updated_at"),
@@ -577,9 +625,15 @@ class ResearchJobService:
         await self.initialize()
         assert self.run_manager is not None
 
+        live_spans = get_run_spans(run_id)
         raw_audit = await self.run_manager.get_audit_log(run_id)
+        meta = await self.run_manager.get_run_metadata(run_id) or {}
+
         if raw_audit:
             audit = AuditLog.model_validate(raw_audit)
+            effective_spans = audit.spans or live_spans
+            cost_dict = audit.cost_summary or meta.get("cost_summary")
+            rag_dict = audit.rag_score or meta.get("rag_score")
             return AuditTraceResponse(
                 run_id=run_id,
                 query=audit.query,
@@ -588,14 +642,17 @@ class ResearchJobService:
                 total_tokens=audit.total_token_usage,
                 step_count=len(audit.steps),
                 steps=audit.steps,
+                cost_summary=RunCostSummary.model_validate(cost_dict) if cost_dict else None,
+                rag_score=RAGQualityScore.model_validate(rag_dict) if rag_dict else None,
+                spans=effective_spans,
                 error=audit.error,
             )
 
-        # Fallback to metadata if audit log is not yet written
-        meta = await self.run_manager.get_run_metadata(run_id)
         if not meta:
             return None
 
+        cost_dict = meta.get("cost_summary")
+        rag_dict = meta.get("rag_score")
         return AuditTraceResponse(
             run_id=run_id,
             query=meta.get("query", ""),
@@ -604,6 +661,9 @@ class ResearchJobService:
             total_tokens=TokenUsage(total_tokens=meta.get("total_tokens", 0)),
             step_count=meta.get("step_count", 0),
             steps=[],
+            cost_summary=RunCostSummary.model_validate(cost_dict) if cost_dict else None,
+            rag_score=RAGQualityScore.model_validate(rag_dict) if rag_dict else None,
+            spans=live_spans,
             error=meta.get("error_message"),
         )
 

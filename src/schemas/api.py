@@ -5,10 +5,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.core.telemetry import TokenUsage
+from src.core.telemetry import RunCostSummary, TokenUsage
 from src.schemas.report import ResearchReport
 from src.schemas.trace import StepTrace
 from src.validators.citation_validator import CitationValidationResult
+from src.validators.rag_scorer import RAGQualityScore
 
 
 class ModelMatrixConfig(BaseModel):
@@ -103,6 +104,8 @@ class ResearchStatusResponse(BaseModel):
     findings_count: int = 0
     report: ResearchReport | None = None
     citation_validation: CitationValidationResult | None = None
+    cost_summary: RunCostSummary | None = None
+    rag_score: RAGQualityScore | None = None
     error_message: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -118,6 +121,9 @@ class AuditTraceResponse(BaseModel):
     total_tokens: TokenUsage = Field(default_factory=TokenUsage)
     step_count: int = 0
     steps: list[StepTrace] = Field(default_factory=list)
+    cost_summary: RunCostSummary | None = None
+    rag_score: RAGQualityScore | None = None
+    spans: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
 
 

@@ -32,9 +32,13 @@ async def test_job_submission_returns_202_accepted_immediately_under_50ms(client
     fake_client = await get_redis_client(force_fake=True)
     job_service.queue = RedisJobQueue(fake_client)
     job_service.run_manager = RedisRunManager(fake_client)
+    await job_service.broadcaster.initialize(fake_client)
     await job_service.queue.clear_queue()
 
     payload = {"query": "Evaluate distributed actor models for multi-agent systems"}
+
+    # Trigger ASGI lifespan initialization before benchmarking endpoint submission
+    await client.get("/health")
 
     start_time = time.perf_counter()
     response = await client.post("/research", json=payload)

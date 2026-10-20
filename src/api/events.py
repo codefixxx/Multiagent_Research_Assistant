@@ -92,14 +92,10 @@ class EventBroadcaster:
             self._subscribers[run_id].add(queue)
 
         pubsub: Any = None
-        listener_gen: Any = None
         if self.redis is not None:
             try:
                 pubsub = self.redis.pubsub()
                 await pubsub.subscribe(EVENT_CHANNEL.format(run_id=run_id))
-                listener_gen = pubsub.listen()
-                # Consume subscribe acknowledgement
-                await anext(listener_gen)
             except Exception as e:
                 logger.debug("Failed opening Redis pubsub, falling back to local queue", error=str(e))
                 if pubsub:
@@ -108,7 +104,6 @@ class EventBroadcaster:
                     except Exception:
                         pass
                 pubsub = None
-                listener_gen = None
 
         # Replay historical events
         past_events: list[str] = []
@@ -149,10 +144,13 @@ class EventBroadcaster:
 
         # Stream live events
         try:
-            if listener_gen is not None:
+            if pubsub is not None:
                 while True:
                     try:
-                        msg = await asyncio.wait_for(anext(listener_gen), timeout=heartbeat_interval)
+                        msg = await pubsub.get_message(
+                            ignore_subscribe_messages=True,
+                            timeout=heartbeat_interval,
+                        )
                         if msg and msg.get("type") == "message":
                             raw_data = msg.get("data")
                             data_str = (
@@ -167,8 +165,13 @@ class EventBroadcaster:
                                 or "event: budget_exceeded" in data_str
                             ):
                                 break
-                    except TimeoutError:
-                        yield ": ping keep-alive\n\n"
+                        elif msg is None:
+                            yield ": ping keep-alive\n\n"
+                    except (asyncio.CancelledError, GeneratorExit):
+                        break
+                    except Exception as e:
+                        logger.debug("Error in pubsub message polling", error=str(e))
+                        break
             else:
                 while True:
                     try:
