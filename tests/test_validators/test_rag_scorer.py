@@ -1,11 +1,10 @@
 """Unit tests for automated RAG Quality Scoring Engine."""
 
-import pytest
 from src.schemas.finding import FindingRecord
 from src.schemas.plan import ResearchPlan, SubQuestion
 from src.schemas.report import Citation, ReportSection, ResearchReport
 from src.validators.citation_validator import CitationValidationResult
-from src.validators.rag_scorer import calculate_rag_quality_score, RAGQualityScore
+from src.validators.rag_scorer import RAGQualityScore, calculate_rag_quality_score
 
 
 def test_rag_scorer_no_report():

@@ -1,6 +1,5 @@
 """Integration tests for Decoupled Task Worker, Redis Job Queue, and Distributed Execution."""
 
-import asyncio
 import time
 import uuid
 

@@ -59,7 +59,7 @@ async def application_error_handler(request: Request, exc: ApplicationError) -> 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
-    detail_str = str(exc.detail) if exc.detail else "HTTP Error"
+    detail_str = exc.detail or "HTTP Error"
     return JSONResponse(
         status_code=exc.status_code,
         content={

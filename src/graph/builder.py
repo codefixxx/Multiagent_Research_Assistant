@@ -25,10 +25,9 @@ from src.graph.state import ResearchState
 from src.graph.supervisor import (
     route_after_consolidator,
     route_after_planner,
-    route_after_reviewer,
 )
 from src.schemas.finding import FindingRecord
-from src.schemas.plan import ResearchPlan, SubQuestion
+from src.schemas.plan import SubQuestion
 from src.schemas.report import Citation, ReportSection, ResearchReport
 from src.schemas.trace import StepTrace, ToolCallRecord
 from src.tools.evidence_collector import EvidenceCollector
@@ -211,7 +210,6 @@ def build_research_graph(
             else:
                 sub_question = raw_sq
             idx = payload.get("index", 0)
-            query = payload.get("query", "")
             run_id = payload.get("run_id", "")
             deep_scrape_flag = payload.get("deep_scrape", True)
             start_time = payload.get("start_time", 0.0)
@@ -222,7 +220,6 @@ def build_research_graph(
                 return {"status": "failed", "error_message": "Missing research plan in worker"}
             idx = payload.get("current_sub_question_index", 0)
             sub_question = plan.sub_questions[idx]
-            query = payload.get("query", "")
             run_id = payload.get("run_id", "")
             deep_scrape_flag = payload.get("deep_scrape", True)
             start_time = payload.get("start_time", 0.0)
@@ -453,7 +450,6 @@ def build_research_graph(
         traces.append(trace_rev)
 
         # 3. Single-pass revision gate if reviewer requested revision
-        is_revision_executed = False
         if not evaluation.is_approved:
             elapsed = (time.time() - start_time) if start_time > 0 else 0.0
             wall_limit = (
@@ -470,7 +466,6 @@ def build_research_graph(
                     wall_limit=wall_limit,
                 )
             else:
-                is_revision_executed = True
                 logger.info(
                     "Worker executing single permitted revision", sub_question_id=sub_question.id
                 )

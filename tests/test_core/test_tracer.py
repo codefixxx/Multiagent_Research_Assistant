@@ -1,13 +1,14 @@
 """Unit tests for OpenTelemetry tracer provider, spans, and span indexer."""
 
-import pytest
 import asyncio
+
+import pytest
+
 from src.core.tracer import (
     async_trace_span,
-    sync_trace_span,
-    get_run_spans,
     clear_run_spans,
-    get_tracer,
+    get_run_spans,
+    sync_trace_span,
 )
 
 

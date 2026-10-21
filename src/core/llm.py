@@ -10,12 +10,9 @@ from pydantic import SecretStr
 
 from src.config import settings
 from src.core.exceptions import (
-    ApplicationError,
     AuthenticationError,
     InvalidModelError,
     LLMConfigurationError,
-    ModelProviderError,
-    RateLimitError,
     classify_error,
 )
 from src.core.logger import logger
@@ -102,6 +99,7 @@ async def verify_model_connectivity(
     Returns a dict on success or raises classified ApplicationError (e.g. AuthenticationError, InvalidModelError).
     """
     import asyncio
+
     from langchain_core.messages import HumanMessage
 
     validate_model_configuration(provider=provider, model_name=model_name, api_key=api_key)
@@ -210,11 +208,15 @@ def get_chat_model(
         logger.info("Initializing OpenAI Chat Model", provider="openai", model=active_model)
         from langchain_openai import ChatOpenAI
 
+        openai_kwargs: dict[str, Any] = {}
+        if max_tokens is not None:
+            openai_kwargs["max_tokens"] = max_tokens
+
         return ChatOpenAI(
             api_key=SecretStr(active_key),
             model=active_model,
             temperature=temperature,
-            max_tokens=max_tokens,
+            **openai_kwargs,
         )
 
     if target_provider == "anthropic":
@@ -233,6 +235,8 @@ def get_chat_model(
             model_name=active_model,
             temperature=temperature,
             max_tokens_to_sample=max_tokens or 4096,
+            timeout=None,
+            stop=None,
         )
 
     if target_provider == "groq":
@@ -268,14 +272,16 @@ def get_chat_model(
         active_model = model_name or settings.OLLAMA_MODEL
         logger.info("Initializing Ollama Chat Model", provider="ollama", model=active_model)
         try:
-            from langchain_community.chat_models import ChatOllama
+            import importlib
 
-            return ChatOllama(
+            ollama_mod = importlib.import_module("langchain_community.chat_models")
+            chat_ollama_cls = getattr(ollama_mod, "ChatOllama")
+            return chat_ollama_cls(
                 base_url=settings.OLLAMA_BASE_URL,
                 model=active_model,
                 temperature=temperature,
             )
-        except ImportError:
+        except (ImportError, AttributeError):
             raise LLMConfigurationError(
                 "langchain-community is required for Ollama provider. Please install it."
             )

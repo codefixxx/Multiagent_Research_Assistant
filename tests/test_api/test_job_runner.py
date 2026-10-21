@@ -37,7 +37,7 @@ async def test_job_service_lifecycle_and_events(mock_llm):
     # Wait for listener to receive completion event
     try:
         await asyncio.wait_for(listener_task, timeout=5.0)
-    except (asyncio.TimeoutError, asyncio.CancelledError):
+    except (TimeoutError, asyncio.CancelledError):
         listener_task.cancel()
         try:
             await listener_task

@@ -17,12 +17,8 @@ from src.core.exceptions import (
     ApplicationError,
     AuthenticationError,
     InvalidModelError,
-    LLMConfigurationError,
-    ModelError,
     ModelProviderError,
-    PipelineExecutionError,
     RateLimitError,
-    ToolExecutionError,
     classify_error,
 )
 from src.core.llm import validate_model_configuration, verify_model_connectivity
@@ -199,10 +195,10 @@ async def test_verify_model_connectivity_with_invalid_provider():
 @pytest.mark.asyncio
 async def test_job_runner_catches_and_persists_model_failure():
     """Verify that ResearchJobService catches model failures, updates Redis status, and broadcasts job_failed."""
+    from langchain_core.runnables import RunnableLambda
+
     from src.api.events import EventBroadcaster
     from tests.conftest import MockChatModel
-
-    from langchain_core.runnables import RunnableLambda
 
     class FailingChatModel(MockChatModel):
         model_name: str = "gemini-unknown-33"
@@ -247,6 +243,9 @@ async def test_job_runner_catches_and_persists_model_failure():
 @pytest.mark.asyncio
 async def test_fastapi_exception_handlers():
     """Verify that FastAPI returns consistent structured JSON on ApplicationError and HTTPException."""
+    from src.api.job_runner import job_service
+
+    await job_service.initialize(force_new=True)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # 404 for unknown run
         r404 = await ac.get("/research/non-existent-run-xyz")

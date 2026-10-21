@@ -4,7 +4,6 @@ Calculates deterministic Groundedness, Citation Precision, and Topic Coverage
 metrics for generated research reports without requiring extra LLM calls.
 """
 
-from typing import Any
 
 from pydantic import BaseModel, Field
 

@@ -28,7 +28,6 @@ from src.schemas.report import ResearchReport
 from src.schemas.trace import AuditLog, StepTrace
 from src.validators.citation_validator import (
     CitationValidationResult,
-    validate_report_citations,
     validate_report_citations_async,
 )
 from src.validators.rag_scorer import RAGQualityScore, calculate_rag_quality_score

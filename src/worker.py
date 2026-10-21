@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import os
 import signal
-import sys
 import uuid
 from typing import Any
 

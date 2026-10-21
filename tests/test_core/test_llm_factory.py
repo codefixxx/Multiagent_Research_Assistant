@@ -2,7 +2,6 @@
 
 import pytest
 from langchain_core.messages import AIMessage
-
 from pydantic import SecretStr
 
 from src.core.llm import LLMConfigurationError, extract_token_usage, get_chat_model

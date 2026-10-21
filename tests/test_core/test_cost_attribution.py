@@ -1,11 +1,9 @@
 """Unit tests for token cost calculation and stage cost attribution."""
 
-import pytest
 from src.core.telemetry import (
-    MODEL_PRICING,
-    calculate_token_cost,
-    StageCostAttribution,
     RunCostSummary,
+    StageCostAttribution,
+    calculate_token_cost,
 )
 
 
