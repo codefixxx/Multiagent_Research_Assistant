@@ -2,11 +2,12 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from src.api.job_runner import ResearchJobService, get_job_service
 from src.api.sse import create_sse_response
 from src.core.exceptions import ApplicationError
+from src.export import ReportExportEngine
 from src.schemas.api import (
     AuditTraceResponse,
     ModelValidationRequest,
@@ -129,6 +130,57 @@ async def get_research_trace(
             detail=f"Audit trace for research run '{run_id}' not found.",
         )
     return trace_resp
+
+
+@router.get(
+    "/{run_id}/export",
+    summary="Export research report in multiple formats",
+    description="Exports the completed research report as PDF, Markdown (.md), Word (.docx), HTML, or JSON.",
+)
+async def export_research_report(
+    run_id: str,
+    format: str = Query(
+        "pdf",
+        description="Desired export format: 'pdf', 'markdown' (or 'md'), 'docx', 'html', or 'json'.",
+    ),
+    service: ResearchJobService = Depends(get_job_service),
+) -> Response:
+    status_resp = await service.get_status(run_id)
+    if not status_resp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Research run '{run_id}' not found.",
+        )
+
+    if not status_resp.report and format.lower() not in ("json",):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Research run '{run_id}' does not have a completed report yet (current status: '{status_resp.status}').",
+        )
+
+    try:
+        content_bytes, media_type, filename = await ReportExportEngine.export(
+            status_resp=status_resp,
+            format=format,
+        )
+    except ValueError as val_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(val_err),
+        ) from val_err
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate {format.upper()} export: {str(exc)}",
+        ) from exc
+
+    return Response(
+        content=content_bytes,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
+    )
 
 
 @router.post(

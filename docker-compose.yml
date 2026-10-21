@@ -14,28 +14,65 @@ services:
       timeout: 3s
       retries: 5
 
-  app:
+  api:
     build:
       context: .
       dockerfile: Dockerfile
+    image: research-assistant:latest
     container_name: research_api
+    command: ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - WORKER_MODE=decoupled
       - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-3.5-flash-lite}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - GROQ_MODEL=${GROQ_MODEL:-qwen/qwen3.8-27b}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - TAVILY_API_KEY=${TAVILY_API_KEY}
       - SEARCH_ENGINE=${SEARCH_ENGINE:-auto}
       - ENVIRONMENT=production
     depends_on:
       redis:
         condition: service_healthy
-    volumes:
-      - ./src:/app/src
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: research-assistant:latest
+    container_name: research_worker
+    command: ["python", "-m", "src.worker"]
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WORKER_MODE=decoupled
+      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-2}
+      - LLM_PROVIDER=${LLM_PROVIDER:-gemini}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - SEARCH_ENGINE=${SEARCH_ENGINE:-auto}
+      - ENABLE_JINA_FALLBACK=${ENABLE_JINA_FALLBACK:-true}
+      - ENABLE_PLAYWRIGHT_FALLBACK=${ENABLE_PLAYWRIGHT_FALLBACK:-true}
+      - PLAYWRIGHT_HEADLESS=true
+      - ENVIRONMENT=production
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, redis; r = redis.from_url(os.getenv('REDIS_URL', 'redis://redis:6379/0')); assert r.ping()"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
 volumes:

@@ -114,6 +114,11 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  const handleExportBackend = (format: 'pdf' | 'docx' | 'html' | 'markdown') => {
+    if (!jobData?.run_id) return;
+    window.open(`/research/${jobData.run_id}/export?format=${format}`, '_blank');
+  };
+
   // Convert technical raw log into clean human update
   const cleanLogMessage = (message: string, source: string) => {
     if (message.includes('Formulated')) return message;
@@ -278,11 +283,29 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
 
             {/* Actions */}
             {report && (
-              <div className="flex items-center space-x-2 text-xs">
+              <div className="flex items-center space-x-1.5 text-xs">
+                <button
+                  type="button"
+                  onClick={() => handleExportBackend('pdf')}
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#1e293b] hover:bg-[#334155] border border-[#3b82f6]/40 text-[#93c5fd] hover:text-white transition-colors cursor-pointer"
+                  title="Download Publication-Grade PDF with Citations"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#60a5fa]" />
+                  <span className="font-medium">PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportBackend('docx')}
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
+                  title="Download Microsoft Word (.docx)"
+                >
+                  <FileText className="w-3.5 h-3.5 text-[#818cf8]" />
+                  <span>Word</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleCopyMarkdown}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
                   title="Copy Raw Markdown"
                 >
                   {copied ? <Check className="w-3.5 h-3.5 text-[#5fc39c]" /> : <Copy className="w-3.5 h-3.5" />}
@@ -291,16 +314,16 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                 <button
                   type="button"
                   onClick={handleDownloadMarkdown}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
                   title="Download Markdown"
                 >
                   <Download className="w-3.5 h-3.5" />
-                  <span>Download .md</span>
+                  <span>.md</span>
                 </button>
                 <button
                   type="button"
                   onClick={handleDownloadJson}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
                   title="Export Run Data JSON"
                 >
                   <Download className="w-3.5 h-3.5" />

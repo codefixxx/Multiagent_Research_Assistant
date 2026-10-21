@@ -1,0 +1,30 @@
+# Virtual environment and python cache
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git and IDE
+.git/
+.gitignore
+.dockerignore
+.idea/
+.vscode/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.agent/
+***REMOVED***
+
+# Frontend dependencies and source (static build is copied to src/static)
+frontend/node_modules/
+frontend/dist/
+
+# Test artifacts and reports
+test-results/
+tests/
+.env*
+!pyproject.toml
+!README.md
