@@ -114,6 +114,32 @@ class ResearchStatusResponse(BaseModel):
     updated_at: str | None = None
 
 
+class ResearchHistoryItem(BaseModel):
+    """Summary of a past research job retained in Redis."""
+
+    run_id: str
+    query: str
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+    step_count: int = 0
+    total_tokens: int = 0
+    findings_count: int = 0
+    cost_summary: RunCostSummary | None = None
+    rag_score: RAGQualityScore | None = None
+    has_report: bool = False
+    error_message: str | None = None
+
+
+class ResearchHistoryResponse(BaseModel):
+    """Paginated list of recent research runs within the retention window."""
+
+    total: int = Field(description="Total number of active runs retained in the index.")
+    runs: list[ResearchHistoryItem] = Field(default_factory=list)
+    limit: int = Field(default=20)
+    offset: int = Field(default=0)
+
+
 class AuditTraceResponse(BaseModel):
     """Full execution trace detailing step-by-step agent interactions."""
 

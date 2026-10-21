@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -187,6 +188,9 @@ class RedisRunManager:
             else getattr(settings, "REPORT_RETENTION_SECONDS", 86400)
         )
 
+    def _index_key(self) -> str:
+        return "research:runs:index"
+
     def _meta_key(self, run_id: str) -> str:
         return f"research:run:{run_id}:metadata"
 
@@ -211,6 +215,16 @@ class RedisRunManager:
             await self.redis.set(self._meta_key(run_id), json.dumps(metadata), ex=self.default_ttl)
         else:
             await self.redis.set(self._meta_key(run_id), json.dumps(metadata))
+
+        # Index run in the reverse-chronological Sorted Set
+        try:
+            now_ts = time.time()
+            await self.redis.zadd(self._index_key(), {run_id: now_ts})
+            if self.default_ttl and self.default_ttl > 0:
+                await self.redis.zremrangebyscore(self._index_key(), "-inf", now_ts - self.default_ttl)
+        except Exception as e:
+            logger.debug("Failed indexing run in Sorted Set", run_id=run_id, error=str(e))
+
         logger.info("Initialized research run metadata in Redis", run_id=run_id, query=query)
         return metadata
 
@@ -261,7 +275,57 @@ class RedisRunManager:
             await self.redis.set(self._meta_key(run_id), json.dumps(meta), ex=self.default_ttl)
         else:
             await self.redis.set(self._meta_key(run_id), json.dumps(meta))
+
+        # Ensure run ID is indexed in the Sorted Set
+        try:
+            now_ts = time.time()
+            await self.redis.zadd(self._index_key(), {run_id: now_ts})
+        except Exception:
+            pass
+
         return meta
+
+    async def list_recent_runs(
+        self, limit: int = 20, offset: int = 0
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Retrieve recent research runs within the retention window in reverse-chronological order."""
+        idx_key = self._index_key()
+        now_ts = time.time()
+        if self.default_ttl and self.default_ttl > 0:
+            try:
+                await self.redis.zremrangebyscore(idx_key, "-inf", now_ts - self.default_ttl)
+            except Exception as e:
+                logger.debug("Failed pruning expired runs from index", error=str(e))
+
+        total = await self.redis.zcard(idx_key) or 0
+        if total == 0:
+            return 0, []
+
+        raw_ids = await self.redis.zrevrange(idx_key, offset, offset + limit - 1)
+        run_ids = [
+            rid.decode("utf-8") if isinstance(rid, bytes) else rid
+            for rid in raw_ids
+        ]
+
+        if not run_ids:
+            return total, []
+
+        runs: list[dict[str, Any]] = []
+        for run_id in run_ids:
+            meta = await self.get_run_metadata(run_id)
+            if meta:
+                # Check whether finalized report artifact exists
+                has_report = await self.redis.exists(self._report_key(run_id))
+                meta["has_report"] = bool(has_report)
+                runs.append(meta)
+            else:
+                # Remove stale/expired ID from index
+                try:
+                    await self.redis.zrem(idx_key, run_id)
+                except Exception:
+                    pass
+
+        return total, runs
 
     async def get_run_metadata(self, run_id: str) -> dict[str, Any] | None:
         """Fetch metadata for a given run ID."""
@@ -371,6 +435,11 @@ class RedisRunManager:
             f"checkpoint:{run_id}",
             f"checkpoint:{run_id}:latest",
         )
+        try:
+            await self.redis.zrem(self._index_key(), run_id)
+        except Exception:
+            pass
+
 
 
 class NodeIdempotencyCache:

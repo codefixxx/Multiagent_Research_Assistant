@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Compass, SlidersHorizontal, Activity } from 'lucide-react';
+import { Compass, SlidersHorizontal, Activity, Clock } from 'lucide-react';
 
 interface HeaderProps {
   tokens?: number;
@@ -9,6 +9,7 @@ interface HeaderProps {
   hasTrace: boolean;
   onOpenSettings: () => void;
   onOpenTrace: () => void;
+  onOpenHistory: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   hasTrace,
   onOpenSettings,
   onOpenTrace,
+  onOpenHistory,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
 
@@ -80,6 +82,17 @@ export const Header: React.FC<HeaderProps> = ({
             ${costUsd.toFixed(4)}
           </span>
         </div>
+
+        {/* History / Library */}
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          className="inline-flex items-center space-x-2 px-3 py-1.5 rounded-md text-[13px] font-medium bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
+          title="Browse recent research runs and saved dossiers"
+        >
+          <Clock className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">History</span>
+        </button>
 
         {/* Activity & Step Details */}
         <button

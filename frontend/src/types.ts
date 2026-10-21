@@ -128,3 +128,26 @@ export interface StreamLogEntry {
   message: string;
   type?: 'system' | 'planner' | 'researcher' | 'reviewer' | 'consolidator' | 'writer' | 'error';
 }
+
+export interface ResearchHistoryItem {
+  run_id: string;
+  query: string;
+  status: JobStatus | string;
+  created_at?: string;
+  updated_at?: string;
+  step_count?: number;
+  total_tokens?: number;
+  findings_count?: number;
+  cost_summary?: RunCostSummary | null;
+  rag_score?: RAGScore | null;
+  has_report?: boolean;
+  error_message?: string | null;
+}
+
+export interface ResearchHistoryResponse {
+  total: number;
+  runs: ResearchHistoryItem[];
+  limit: number;
+  offset: number;
+}
+

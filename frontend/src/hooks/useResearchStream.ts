@@ -392,37 +392,51 @@ export function useResearchStream() {
     }
   }, [startTimer, stopTimer, appendLog, connectSSE, startPolling]);
 
+  const loadRun = useCallback(async (runId: string) => {
+    try {
+      if (eventSourceRef.current) eventSourceRef.current.close();
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      stopTimer();
+
+      setCurrentRunId(runId);
+      try {
+        localStorage.setItem('multiagent_last_run_id', runId);
+        window.history.replaceState({}, '', '?run_id=' + runId);
+      } catch {}
+
+      const res = await fetch(`/research/${runId}`);
+      if (!res.ok) return;
+      const data: ResearchJobData = await res.json();
+      if (data && data.run_id) {
+        setJobData(data);
+        setStatus(data.status);
+        if (data.findings_count) setFindingsCount(data.findings_count);
+        if (data.citations_count) setCitationsCount(data.citations_count);
+        if (data.cost_summary) setCostSummary(data.cost_summary);
+        if (data.rag_score) setRagScore(data.rag_score);
+        if (data.status === 'completed' || data.status === 'budget_exceeded') {
+          setPlannerState('completed');
+          setConsolidatorState('completed');
+          setWriterState('completed');
+          loadTrace(runId);
+        } else if (data.status !== 'failed') {
+          connectSSE(runId);
+          startPolling(runId);
+          startTimer();
+        }
+      }
+    } catch (e) {
+      console.warn('Failed loading run:', e);
+    }
+  }, [connectSSE, startPolling, startTimer, stopTimer, loadTrace]);
+
   // Load existing run on mount if URL has ?run_id=
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const runIdFromUrl = params.get('run_id') || localStorage.getItem('multiagent_last_run_id');
 
     if (runIdFromUrl) {
-      setCurrentRunId(runIdFromUrl);
-      fetch(`/research/${runIdFromUrl}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data && data.run_id) {
-            setJobData(data);
-            setStatus(data.status);
-            if (data.findings_count) setFindingsCount(data.findings_count);
-            if (data.citations_count) setCitationsCount(data.citations_count);
-            if (data.cost_summary) setCostSummary(data.cost_summary);
-            if (data.rag_score) setRagScore(data.rag_score);
-            if (data.status === 'completed' || data.status === 'budget_exceeded') {
-              setPlannerState('completed');
-              setConsolidatorState('completed');
-              setWriterState('completed');
-              loadTrace(runIdFromUrl);
-            } else if (data.status !== 'failed') {
-              // Reconnect stream if still in progress
-              connectSSE(runIdFromUrl);
-              startPolling(runIdFromUrl);
-              startTimer();
-            }
-          }
-        })
-        .catch(() => {});
+      loadRun(runIdFromUrl);
     }
 
     return () => {
@@ -430,7 +444,7 @@ export function useResearchStream() {
       if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [connectSSE, startPolling, startTimer, loadTrace]);
+  }, [loadRun]);
 
   const formattedTimer = (() => {
     const totalSec = Math.floor(elapsedMs / 1000);
@@ -458,6 +472,8 @@ export function useResearchStream() {
     ragScore,
     formattedTimer,
     dispatchInvestigation,
+    loadRun,
     loadTrace
   };
 }
+

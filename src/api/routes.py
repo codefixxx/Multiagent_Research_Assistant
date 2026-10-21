@@ -12,6 +12,8 @@ from src.schemas.api import (
     AuditTraceResponse,
     ModelValidationRequest,
     ModelValidationResponse,
+    ResearchHistoryItem,
+    ResearchHistoryResponse,
     ResearchRequest,
     ResearchStatusResponse,
     ResearchSubmissionResponse,
@@ -72,6 +74,44 @@ async def submit_research(
         run_id=run_id,
         status="queued",
         message="Research job accepted and queued for execution.",
+    )
+
+
+@router.get(
+    "/history",
+    response_model=ResearchHistoryResponse,
+    summary="List recent research runs within retention window",
+    description="Retrieves a reverse-chronological list of recent research investigations from Redis cache.",
+)
+async def list_research_history(
+    limit: int = Query(20, ge=1, le=100, description="Max runs to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    service: ResearchJobService = Depends(get_job_service),
+) -> ResearchHistoryResponse:
+    total, raw_runs = await service.get_history(limit=limit, offset=offset)
+    items = []
+    for r in raw_runs:
+        items.append(
+            ResearchHistoryItem(
+                run_id=r.get("run_id", ""),
+                query=r.get("query", ""),
+                status=r.get("status", "planning"),
+                created_at=r.get("created_at"),
+                updated_at=r.get("updated_at"),
+                step_count=r.get("step_count", 0),
+                total_tokens=r.get("total_tokens", 0),
+                findings_count=r.get("findings_count", 0),
+                cost_summary=r.get("cost_summary"),
+                rag_score=r.get("rag_score"),
+                has_report=r.get("has_report", False),
+                error_message=r.get("error_message"),
+            )
+        )
+    return ResearchHistoryResponse(
+        total=total,
+        runs=items,
+        limit=limit,
+        offset=offset,
     )
 
 

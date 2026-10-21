@@ -1,5 +1,7 @@
 """Unit tests for Redis checkpointer, run manager, and idempotency cache."""
 
+import asyncio
+
 import pytest
 
 from src.persistence.redis_saver import (
@@ -165,3 +167,86 @@ async def test_redis_run_manager_disabled_ttl():
     await manager.save_report(run_id, {"title": "Permanent"})
     report_ttl = await client.ttl(manager._report_key(run_id))
     assert report_ttl == -1
+
+
+@pytest.mark.asyncio
+async def test_list_recent_runs_ordered_and_paginated():
+    """Verify list_recent_runs returns reverse-chronological order and pagination."""
+    client = await get_redis_client(force_fake=True)
+    await client.flushall()
+    manager = RedisRunManager(redis_client=client)
+
+    # Initialize 3 runs sequentially with distinct timestamps
+    await manager.init_run("run-alpha", "First investigation")
+    await asyncio.sleep(0.01)
+    await manager.init_run("run-beta", "Second investigation")
+    await asyncio.sleep(0.01)
+    await manager.init_run("run-gamma", "Third investigation")
+
+    # Save report for r2 only
+    await manager.save_report("run-beta", {"title": "Beta Report", "sections": []})
+
+    # Retrieve full list
+    total, runs = await manager.list_recent_runs(limit=10, offset=0)
+    assert total == 3
+    assert len(runs) == 3
+    # Reverse-chronological (most recent first)
+    assert runs[0]["run_id"] == "run-gamma"
+    assert runs[1]["run_id"] == "run-beta"
+    assert runs[2]["run_id"] == "run-alpha"
+
+    # has_report flag check
+    assert runs[0]["has_report"] is False
+    assert runs[1]["has_report"] is True
+    assert runs[2]["has_report"] is False
+
+    # Pagination: page 1 (limit 2)
+    p1_total, p1_runs = await manager.list_recent_runs(limit=2, offset=0)
+    assert p1_total == 3
+    assert len(p1_runs) == 2
+    assert p1_runs[0]["run_id"] == "run-gamma"
+    assert p1_runs[1]["run_id"] == "run-beta"
+
+    # Pagination: page 2 (offset 2)
+    p2_total, p2_runs = await manager.list_recent_runs(limit=2, offset=2)
+    assert p2_total == 3
+    assert len(p2_runs) == 1
+    assert p2_runs[0]["run_id"] == "run-alpha"
+
+
+@pytest.mark.asyncio
+async def test_list_recent_runs_prunes_stale_index_entries():
+    """Verify list_recent_runs removes stale index members when metadata key has expired."""
+    client = await get_redis_client(force_fake=True)
+    await client.flushall()
+    manager = RedisRunManager(redis_client=client)
+
+    await manager.init_run("run-valid", "Valid query")
+    await manager.init_run("run-expired", "Expired query")
+
+    # Manually delete metadata for run-expired to simulate TTL expiration in Redis
+    await client.delete(manager._meta_key("run-expired"))
+
+    total, runs = await manager.list_recent_runs(limit=10, offset=0)
+    # Stale entry should be purged from result
+    run_ids = [r["run_id"] for r in runs]
+    assert "run-valid" in run_ids
+    assert "run-expired" not in run_ids
+
+
+@pytest.mark.asyncio
+async def test_clear_run_removes_from_index():
+    """Verify clear_run purges metadata and removes the run ID from the Sorted Set index."""
+    client = await get_redis_client(force_fake=True)
+    await client.flushall()
+    manager = RedisRunManager(redis_client=client)
+
+    await manager.init_run("run-to-delete", "To be cleared")
+    total, runs = await manager.list_recent_runs(limit=10, offset=0)
+    assert any(r["run_id"] == "run-to-delete" for r in runs)
+
+    await manager.clear_run("run-to-delete")
+    total_after, runs_after = await manager.list_recent_runs(limit=10, offset=0)
+    assert not any(r["run_id"] == "run-to-delete" for r in runs_after)
+
+

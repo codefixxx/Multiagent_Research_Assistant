@@ -190,3 +190,35 @@ async def test_submit_research_with_byok_and_model_matrix(client):
     assert "run_id" in data
     assert data["status"] == "queued"
 
+
+@pytest.mark.asyncio
+async def test_get_research_history_endpoint(client):
+    """GET /research/history returns paginated historical runs in reverse chronological order."""
+    # 1. Initial check on history
+    initial_res = await client.get("/research/history")
+    assert initial_res.status_code == 200
+    initial_data = initial_res.json()
+    assert "total" in initial_data
+    assert "runs" in initial_data
+    assert isinstance(initial_data["runs"], list)
+
+    # 2. Submit a new research run
+    query_text = "Historical Run Indexing Verification Test"
+    submit_res = await client.post("/research", json={"query": query_text})
+    assert submit_res.status_code == 202
+    run_id = submit_res.json()["run_id"]
+
+    # 3. Query history again
+    history_res = await client.get("/research/history?limit=10&offset=0")
+    assert history_res.status_code == 200
+    history_data = history_res.json()
+    assert history_data["total"] >= 1
+    found = [r for r in history_data["runs"] if r["run_id"] == run_id]
+    assert len(found) == 1
+    item = found[0]
+    assert item["query"] == query_text
+    assert "status" in item
+    assert "has_report" in item
+    assert item["has_report"] is False  # newly submitted run has no report yet
+
+

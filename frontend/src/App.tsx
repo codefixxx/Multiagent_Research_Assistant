@@ -7,6 +7,7 @@ import { SplitStudio } from './components/SplitStudio';
 import { CitationPopover } from './components/CitationPopover';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { TraceDrawer } from './components/TraceDrawer';
+import { HistoryDrawer } from './components/HistoryDrawer';
 import type { Citation, ModelMatrix, ApiKeys } from './types';
 
 export function App() {
@@ -27,11 +28,13 @@ export function App() {
     ragScore,
     formattedTimer,
     dispatchInvestigation,
+    loadRun,
   } = useResearchStream();
 
   const [selectedCitation, setSelectedCitation] = useState<Citation | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTraceOpen, setIsTraceOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const [activeModelMatrix, setActiveModelMatrix] = useState<ModelMatrix | undefined>(() => {
     try {
@@ -86,6 +89,7 @@ export function App() {
         hasTrace={activeSpans.length > 0}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTrace={() => setIsTraceOpen(true)}
+        onOpenHistory={() => setIsHistoryOpen(true)}
       />
 
       {/* 2. Main Workspace */}
@@ -136,6 +140,13 @@ export function App() {
         spans={activeSpans}
         costSummary={costSummary}
         ragScore={ragScore}
+      />
+
+      <HistoryDrawer
+        isOpen={isHistoryOpen}
+        onClose={() => setIsHistoryOpen(false)}
+        onSelectRun={loadRun}
+        currentRunId={currentRunId}
       />
     </div>
   );

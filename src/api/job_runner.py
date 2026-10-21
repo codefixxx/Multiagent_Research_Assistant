@@ -773,6 +773,14 @@ class ResearchJobService:
             return await self.queue.get_active_workers()
         return []
 
+    async def get_history(
+        self, limit: int = 20, offset: int = 0
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Fetch paginated recent runs from the Redis retention index."""
+        await self.initialize()
+        assert self.run_manager is not None
+        return await self.run_manager.list_recent_runs(limit=limit, offset=offset)
+
 
 # Global singleton instance
 job_service = ResearchJobService()
