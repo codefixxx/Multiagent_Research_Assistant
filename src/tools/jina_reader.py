@@ -93,6 +93,7 @@ class JinaReaderClient:
                     url=url,
                     status=status,
                     error_message=f"Jina Reader returned HTTP {response.status_code}: {response.reason_phrase}",
+                    tier="tier2_jina",
                 )
 
             raw_text = response.text
@@ -101,6 +102,7 @@ class JinaReaderClient:
                     url=url,
                     status=ExtractionStatus.NO_RESULTS,
                     error_message="Jina Reader returned empty content",
+                    tier="tier2_jina",
                 )
 
             title, clean_body = self._parse_jina_markdown(raw_text)
@@ -119,6 +121,7 @@ class JinaReaderClient:
                 raw_text=clean_text,
                 status=ExtractionStatus.SUCCESS,
                 word_count=word_count,
+                tier="tier2_jina",
             )
 
         except httpx.TimeoutException:
@@ -127,6 +130,7 @@ class JinaReaderClient:
                 url=url,
                 status=ExtractionStatus.TIMED_OUT,
                 error_message=f"Jina Reader timed out after {self.timeout:.1f}s",
+                tier="tier2_jina",
             )
         except Exception as e:
             logger.warning("Jina Reader request failed", url=url, error=str(e))
@@ -134,4 +138,5 @@ class JinaReaderClient:
                 url=url,
                 status=ExtractionStatus.ERROR,
                 error_message=str(e),
+                tier="tier2_jina",
             )

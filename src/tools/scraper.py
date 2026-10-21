@@ -34,6 +34,10 @@ class ScrapedDocument(BaseModel):
         description="Error details if scrape failed.",
     )
     word_count: int = Field(default=0, description="Word count of extracted text.")
+    tier: str | None = Field(
+        default=None,
+        description="Scraping tier that yielded the result: tier1_direct, tier2_jina, tier3_playwright.",
+    )
 
 
 class DeepPageScraper:
@@ -46,6 +50,8 @@ class DeepPageScraper:
         user_agent: str = DEFAULT_USER_AGENT,
         enable_jina_fallback: bool | None = None,
         jina_client: Any = None,
+        enable_playwright_fallback: bool | None = None,
+        playwright_client: Any = None,
     ) -> None:
         self.timeout = timeout or settings.SCRAPER_TIMEOUT_SECONDS
         self.max_words = max_words_per_page or settings.SCRAPER_MAX_WORDS_PER_PAGE
@@ -56,6 +62,12 @@ class DeepPageScraper:
             else settings.ENABLE_JINA_FALLBACK
         )
         self.jina_client = jina_client
+        self.enable_playwright_fallback = (
+            enable_playwright_fallback
+            if enable_playwright_fallback is not None
+            else settings.ENABLE_PLAYWRIGHT_FALLBACK
+        )
+        self.playwright_client = playwright_client
 
     def _extract_title(self, html: str) -> str:
         """Extract title from HTML using regex fallback."""
@@ -67,9 +79,9 @@ class DeepPageScraper:
 
     def _fallback_text_extraction(self, html: str) -> str:
         """Basic regex-based HTML text extractor when trafilatura yields no content."""
-        # Strip script and style blocks
+        # Strip script, style, head, nav, footer, header blocks
         clean = re.sub(
-            r"<(script|style|nav|footer|header)[^>]*>.*?</\1>",
+            r"<(script|style|head|nav|footer|header)[^>]*>.*?</\1>",
             "",
             html,
             flags=re.DOTALL | re.IGNORECASE,
@@ -119,6 +131,7 @@ class DeepPageScraper:
             # Check HTTP Status Code
             if response.status_code != 200:
                 status = map_http_status_to_extraction_status(response.status_code)
+                # Tier 2: Jina Reader API fallback
                 if self.enable_jina_fallback and status in (
                     ExtractionStatus.BLOCKED,
                     ExtractionStatus.PAYWALLED,
@@ -136,10 +149,31 @@ class DeepPageScraper:
                     if jina_doc.status == ExtractionStatus.SUCCESS:
                         return jina_doc
 
+                # Tier 3: Playwright Stealth Browser fallback
+                if self.enable_playwright_fallback and status in (
+                    ExtractionStatus.BLOCKED,
+                    ExtractionStatus.PAYWALLED,
+                    ExtractionStatus.ERROR,
+                ):
+                    logger.info(
+                        "Direct scrape and Jina failed; trying Playwright stealth fallback",
+                        url=url,
+                        status_code=response.status_code,
+                    )
+                    from src.tools.playwright_scraper import PlaywrightScraperClient
+
+                    pw = self.playwright_client or PlaywrightScraperClient(
+                        max_words=self.max_words
+                    )
+                    pw_doc = await pw.read_url(url)
+                    if pw_doc.status == ExtractionStatus.SUCCESS:
+                        return pw_doc
+
                 return ScrapedDocument(
                     url=url,
                     status=status,
                     error_message=f"HTTP {response.status_code}: {response.reason_phrase}",
+                    tier="tier1_direct",
                 )
 
             # Validate Content-Type
@@ -151,6 +185,7 @@ class DeepPageScraper:
                     url=url,
                     status=ExtractionStatus.BLOCKED,
                     error_message=f"Unsupported non-HTML content type: {content_type}",
+                    tier="tier1_direct",
                 )
 
             html_content = response.text
@@ -170,6 +205,7 @@ class DeepPageScraper:
                 extracted_text = self._fallback_text_extraction(html_content)
 
             if not extracted_text or not extracted_text.strip():
+                # Tier 2: Jina Reader fallback
                 if self.enable_jina_fallback:
                     logger.info(
                         "Direct scrape yielded no readable text; trying Jina Reader fallback",
@@ -182,11 +218,27 @@ class DeepPageScraper:
                     if jina_doc.status == ExtractionStatus.SUCCESS:
                         return jina_doc
 
+                # Tier 3: Playwright Stealth Browser fallback
+                if self.enable_playwright_fallback:
+                    logger.info(
+                        "Direct scrape and Jina yielded no text; trying Playwright stealth fallback",
+                        url=url,
+                    )
+                    from src.tools.playwright_scraper import PlaywrightScraperClient
+
+                    pw = self.playwright_client or PlaywrightScraperClient(
+                        max_words=self.max_words
+                    )
+                    pw_doc = await pw.read_url(url)
+                    if pw_doc.status == ExtractionStatus.SUCCESS:
+                        return pw_doc
+
                 return ScrapedDocument(
                     url=url,
                     title=title,
                     status=ExtractionStatus.NO_RESULTS,
                     error_message="No readable main text extracted from webpage",
+                    tier="tier1_direct",
                 )
 
             clean_text, word_count = self._truncate_content(extracted_text)
@@ -204,6 +256,7 @@ class DeepPageScraper:
                 raw_text=clean_text,
                 status=ExtractionStatus.SUCCESS,
                 word_count=word_count,
+                tier="tier1_direct",
             )
 
         except httpx.TimeoutException:

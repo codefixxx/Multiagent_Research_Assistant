@@ -90,6 +90,20 @@ class Settings(BaseSettings):
         description="Whether to fall back to Jina Reader (r.jina.ai) when direct scraping is blocked.",
     )
 
+    # Playwright Headless Stealth Scraper Configuration
+    ENABLE_PLAYWRIGHT_FALLBACK: bool = Field(
+        default=True,
+        description="Whether to fall back to headless Playwright stealth browser when direct scraping and Jina fail (e.g. anti-bot 403, Cloudflare, SPAs).",
+    )
+    PLAYWRIGHT_TIMEOUT_SECONDS: float = Field(
+        default=12.0,
+        description="Timeout in seconds for Playwright headless page render.",
+    )
+    PLAYWRIGHT_HEADLESS: bool = Field(
+        default=True,
+        description="Whether to run Playwright in headless mode.",
+    )
+
     # Developer Community / Hacker News Configuration
     ENABLE_HACKER_NEWS: bool = Field(
         default=True,

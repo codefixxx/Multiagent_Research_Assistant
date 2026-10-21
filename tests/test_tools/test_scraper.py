@@ -77,7 +77,7 @@ async def test_scrape_page_blocked_403(monkeypatch):
 
     monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
 
-    scraper = DeepPageScraper()
+    scraper = DeepPageScraper(enable_playwright_fallback=False)
     doc = await scraper.scrape_page("https://example.com/protected")
 
     assert doc.status == ExtractionStatus.BLOCKED

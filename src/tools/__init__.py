@@ -10,6 +10,7 @@ from src.tools.errors import (
 from src.tools.evidence_collector import EvidenceCollectionResult, EvidenceCollector
 from src.tools.hacker_news import HackerNewsClient, HackerNewsStory
 from src.tools.jina_reader import JinaReaderClient
+from src.tools.playwright_scraper import PlaywrightScraperClient
 from src.tools.scraper import DeepPageScraper, ScrapedDocument
 from src.tools.search import (
     BaseSearchEngine,
@@ -32,6 +33,7 @@ __all__ = [
     "JinaReaderClient",
     "MockSearchClient",
     "MultiSearchClient",
+    "PlaywrightScraperClient",
     "ScrapedDocument",
     "ScraperError",
     "SearchResult",
