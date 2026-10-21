@@ -6,14 +6,52 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from src.api.job_runner import ResearchJobService, get_job_service
 from src.api.sse import create_sse_response
+from src.core.exceptions import ApplicationError
 from src.schemas.api import (
     AuditTraceResponse,
+    ModelValidationRequest,
+    ModelValidationResponse,
     ResearchRequest,
     ResearchStatusResponse,
     ResearchSubmissionResponse,
 )
 
 router = APIRouter(prefix="/research", tags=["Research"])
+
+
+@router.post(
+    "/validate-model",
+    response_model=ModelValidationResponse,
+    summary="Validate LLM model and API key credentials",
+    description="Tests credentials and availability of a specific model before launching research.",
+)
+async def validate_model(
+    payload: ModelValidationRequest,
+) -> ModelValidationResponse:
+    from src.core.llm import verify_model_connectivity
+
+    try:
+        res = await verify_model_connectivity(
+            provider=payload.provider,
+            model_name=payload.model_name,
+            api_key=payload.api_key,
+        )
+        return ModelValidationResponse(
+            valid=True,
+            provider=res.get("provider", payload.provider or "unknown"),
+            model=res.get("model", payload.model_name or "default"),
+            message=res.get("message", "Model verified successfully."),
+            sample_response=res.get("sample_response"),
+        )
+    except ApplicationError as exc:
+        return ModelValidationResponse(
+            valid=False,
+            provider=payload.provider or "unknown",
+            model=payload.model_name or "default",
+            message=exc.message,
+            code=exc.code,
+            suggestion=exc.suggestion,
+        )
 
 
 @router.post(

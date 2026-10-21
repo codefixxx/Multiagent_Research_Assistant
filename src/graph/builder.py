@@ -16,6 +16,7 @@ from src.agents.researcher import research_subquestion
 from src.agents.reviewer import evaluate_research
 from src.agents.writer import write_report
 from src.config import settings
+from src.core.exceptions import classify_error
 from src.core.logger import logger
 from src.core.telemetry import TokenUsage, calculate_token_cost
 from src.core.tracer import async_trace_span
@@ -124,69 +125,83 @@ def build_research_graph(
             or getattr(active_planner_llm, "model", None)
             or "default"
         )
-        async with async_trace_span(
-            name="agent.planner",
-            run_id=run_id,
-            attributes={
-                "step": step,
-                "agent.role": "planner",
-                "query": query,
-                "llm.model": str(planner_model),
-            },
-        ) as span_ctx:
-            plan, tokens, latency = await plan_research(
-                query=query, llm=active_planner_llm, max_sub_questions=max_subqs
-            )
-            cost_usd = calculate_token_cost(
-                str(planner_model), tokens.prompt_tokens, tokens.completion_tokens
-            )
-            tokens.estimated_cost_usd = cost_usd
-            span_ctx.update(
-                {
-                    "sub_questions_count": len(plan.sub_questions),
-                    "tokens.prompt": tokens.prompt_tokens,
-                    "tokens.completion": tokens.completion_tokens,
-                    "tokens.total": tokens.total_tokens,
-                    "cost.usd": cost_usd,
-                    "latency_ms": latency,
-                }
-            )
-
-            trace = create_step_trace(
-                step_number=step,
-                agent_name="planner",
-                input_data={"query": query},
-                output_data={"sub_questions_count": len(plan.sub_questions)},
-                tokens=tokens,
-                latency_ms=latency,
-            )
-
-        if run_manager and run_id:
-            try:
-                await run_manager.update_run_status(
-                    run_id=run_id,
-                    status="researching",
-                    current_node="planner",
-                    step_count=step,
-                    total_tokens=tokens.total_tokens,
+        try:
+            async with async_trace_span(
+                name="agent.planner",
+                run_id=run_id,
+                attributes={
+                    "step": step,
+                    "agent.role": "planner",
+                    "query": query,
+                    "llm.model": str(planner_model),
+                },
+            ) as span_ctx:
+                plan, tokens, latency = await plan_research(
+                    query=query, llm=active_planner_llm, max_sub_questions=max_subqs
                 )
-                await run_manager.record_completed_step(
-                    run_id=run_id,
-                    node_name="planner",
+                cost_usd = calculate_token_cost(
+                    str(planner_model), tokens.prompt_tokens, tokens.completion_tokens
+                )
+                tokens.estimated_cost_usd = cost_usd
+                span_ctx.update(
+                    {
+                        "sub_questions_count": len(plan.sub_questions),
+                        "tokens.prompt": tokens.prompt_tokens,
+                        "tokens.completion": tokens.completion_tokens,
+                        "tokens.total": tokens.total_tokens,
+                        "cost.usd": cost_usd,
+                        "latency_ms": latency,
+                    }
+                )
+
+                trace = create_step_trace(
                     step_number=step,
+                    agent_name="planner",
+                    input_data={"query": query},
+                    output_data={"sub_questions_count": len(plan.sub_questions)},
+                    tokens=tokens,
+                    latency_ms=latency,
                 )
-            except Exception as e:
-                logger.debug("Failed updating run_manager in planner", error=str(e))
 
-        return {
-            "plan": plan,
-            "current_sub_question_index": 0,
-            "revision_count": 0,
-            "status": "researching",
-            "step_count": 1,
-            "total_tokens": tokens,
-            "audit_traces": [trace],
-        }
+            if run_manager and run_id:
+                try:
+                    await run_manager.update_run_status(
+                        run_id=run_id,
+                        status="researching",
+                        current_node="planner",
+                        step_count=step,
+                        total_tokens=tokens.total_tokens,
+                    )
+                    await run_manager.record_completed_step(
+                        run_id=run_id,
+                        node_name="planner",
+                        step_number=step,
+                    )
+                except Exception as e:
+                    logger.debug("Failed updating run_manager in planner", error=str(e))
+
+            return {
+                "plan": plan,
+                "current_sub_question_index": 0,
+                "revision_count": 0,
+                "status": "researching",
+                "step_count": 1,
+                "total_tokens": tokens,
+                "audit_traces": [trace],
+            }
+        except Exception as exc:
+            classified = classify_error(
+                exc,
+                model_name=str(planner_model) if planner_model else None,
+                node="planner",
+            )
+            logger.error(
+                "Planner node execution failed",
+                run_id=run_id,
+                code=classified.code,
+                error=classified.message,
+            )
+            raise classified from exc
 
     async def researcher_node(payload: Any) -> dict[str, Any]:
         raw_sq = payload.get("sub_question") if isinstance(payload, dict) else getattr(payload, "sub_question", None)
@@ -611,75 +626,89 @@ def build_research_graph(
             or getattr(active_writer_llm, "model", None)
             or "default"
         )
-        async with async_trace_span(
-            name="agent.writer",
-            run_id=run_id,
-            attributes={
-                "step": step,
-                "agent.role": "writer",
-                "findings_count": len(findings),
-                "llm.model": str(writer_model),
-            },
-        ) as span_ctx:
-            report, tokens, latency = await write_report(
-                query=query,
-                findings=findings,
-                llm=active_writer_llm,
-            )
-            writer_cost = calculate_token_cost(
-                str(writer_model), tokens.prompt_tokens, tokens.completion_tokens
-            )
-            tokens.estimated_cost_usd = writer_cost
-
-            span_ctx.update(
-                {
-                    "title": report.title,
-                    "sections_count": len(report.sections),
-                    "citations_count": len(report.citations),
-                    "tokens.prompt": tokens.prompt_tokens,
-                    "tokens.completion": tokens.completion_tokens,
-                    "tokens.total": tokens.total_tokens,
-                    "cost.usd": writer_cost,
-                    "latency_ms": latency,
-                }
-            )
-
-            trace = create_step_trace(
-                step_number=step,
-                agent_name="writer",
-                input_data={"query": query, "findings_count": len(findings)},
-                output_data={"title": report.title, "sections_count": len(report.sections)},
-                tokens=tokens,
-                latency_ms=latency,
-            )
-
-        cum_tokens = _normalize_tokens(state.get("total_tokens"))
-        cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
-
-        if run_manager and run_id:
-            try:
-                await run_manager.update_run_status(
-                    run_id=run_id,
-                    status="completed",
-                    current_node="writer",
-                    step_count=step,
-                    total_tokens=cum_tokens.total_tokens,
+        try:
+            async with async_trace_span(
+                name="agent.writer",
+                run_id=run_id,
+                attributes={
+                    "step": step,
+                    "agent.role": "writer",
+                    "findings_count": len(findings),
+                    "llm.model": str(writer_model),
+                },
+            ) as span_ctx:
+                report, tokens, latency = await write_report(
+                    query=query,
+                    findings=findings,
+                    llm=active_writer_llm,
                 )
-                await run_manager.record_completed_step(
-                    run_id=run_id,
-                    node_name="writer",
+                writer_cost = calculate_token_cost(
+                    str(writer_model), tokens.prompt_tokens, tokens.completion_tokens
+                )
+                tokens.estimated_cost_usd = writer_cost
+
+                span_ctx.update(
+                    {
+                        "title": report.title,
+                        "sections_count": len(report.sections),
+                        "citations_count": len(report.citations),
+                        "tokens.prompt": tokens.prompt_tokens,
+                        "tokens.completion": tokens.completion_tokens,
+                        "tokens.total": tokens.total_tokens,
+                        "cost.usd": writer_cost,
+                        "latency_ms": latency,
+                    }
+                )
+
+                trace = create_step_trace(
                     step_number=step,
+                    agent_name="writer",
+                    input_data={"query": query, "findings_count": len(findings)},
+                    output_data={"title": report.title, "sections_count": len(report.sections)},
+                    tokens=tokens,
+                    latency_ms=latency,
                 )
-            except Exception as e:
-                logger.debug("Failed updating run_manager in writer", error=str(e))
 
-        return {
-            "report": report,
-            "status": "completed",
-            "step_count": 1,
-            "total_tokens": tokens,
-            "audit_traces": [trace],
-        }
+            cum_tokens = _normalize_tokens(state.get("total_tokens"))
+            cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
+
+            if run_manager and run_id:
+                try:
+                    await run_manager.update_run_status(
+                        run_id=run_id,
+                        status="completed",
+                        current_node="writer",
+                        step_count=step,
+                        total_tokens=cum_tokens.total_tokens,
+                    )
+                    await run_manager.record_completed_step(
+                        run_id=run_id,
+                        node_name="writer",
+                        step_number=step,
+                    )
+                except Exception as e:
+                    logger.debug("Failed updating run_manager in writer", error=str(e))
+
+            return {
+                "report": report,
+                "status": "completed",
+                "step_count": 1,
+                "total_tokens": tokens,
+                "audit_traces": [trace],
+            }
+        except Exception as exc:
+            classified = classify_error(
+                exc,
+                model_name=str(writer_model) if writer_model else None,
+                node="writer",
+            )
+            logger.error(
+                "Writer node execution failed",
+                run_id=run_id,
+                code=classified.code,
+                error=classified.message,
+            )
+            raise classified from exc
 
     async def emergency_writer_node(state: ResearchState) -> dict[str, Any]:
         step = state.get("step_count", 0) + 1

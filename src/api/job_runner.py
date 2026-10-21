@@ -9,6 +9,7 @@ from langchain_core.runnables import RunnableConfig
 
 from src.api.events import EventBroadcaster, broadcaster
 from src.config import settings
+from src.core.exceptions import classify_error
 from src.core.llm import detect_provider, get_chat_model
 from src.core.logger import logger
 from src.core.telemetry import RunCostSummary, StageCostAttribution, TokenUsage
@@ -165,95 +166,95 @@ class ResearchJobService:
 
         assert self.run_manager is not None
 
-        # Resolve specialized models for each agent role if not provided by caller (e.g. tests)
-        llm_planner = None
-        llm_researcher = None
-        llm_reviewer = None
-        llm_writer = None
-        collector = None
+        try:
+            # Resolve specialized models for each agent role if not provided by caller (e.g. tests)
+            llm_planner = None
+            llm_researcher = None
+            llm_reviewer = None
+            llm_writer = None
+            collector = None
 
-        if llm is None:
-            user_keys = request.api_keys.model_dump() if request.api_keys else {}
-            matrix = request.model_matrix.model_dump() if request.model_matrix else {}
+            if llm is None:
+                user_keys = request.api_keys.model_dump() if request.api_keys else {}
+                matrix = request.model_matrix.model_dump() if request.model_matrix else {}
 
-            def _get_key_for_model(model_name: str | None) -> str | None:
-                if not model_name:
-                    return None
-                prov = detect_provider(model_name)
-                return user_keys.get(prov)
+                def _get_key_for_model(model_name: str | None) -> str | None:
+                    if not model_name:
+                        return None
+                    prov = detect_provider(model_name)
+                    return user_keys.get(prov)
 
-            planner_model = matrix.get("planner")
-            researcher_model = matrix.get("researcher")
-            reviewer_model = matrix.get("reviewer")
-            writer_model = matrix.get("writer")
+                planner_model = matrix.get("planner")
+                researcher_model = matrix.get("researcher")
+                reviewer_model = matrix.get("reviewer")
+                writer_model = matrix.get("writer")
 
-            llm_planner = get_chat_model(
-                model_name=planner_model,
-                api_key=_get_key_for_model(planner_model),
-                temperature=0.0,
-            )
-            llm_researcher = get_chat_model(
-                model_name=researcher_model,
-                api_key=_get_key_for_model(researcher_model),
-                temperature=0.1,
-            )
-            llm_reviewer = get_chat_model(
-                model_name=reviewer_model,
-                api_key=_get_key_for_model(reviewer_model),
-                temperature=0.0,
-            )
-            llm_writer = get_chat_model(
-                model_name=writer_model,
-                api_key=_get_key_for_model(writer_model),
-                temperature=0.2,
-            )
-
-            tavily_user_key = user_keys.get("tavily")
-            if tavily_user_key:
-                from src.tools.evidence_collector import EvidenceCollector
-                from src.tools.search import MultiSearchClient, TavilySearchClient
-
-                collector = EvidenceCollector(
-                    search_client=MultiSearchClient(
-                        tavily_client=TavilySearchClient(api_key=tavily_user_key)
-                    )
+                llm_planner = get_chat_model(
+                    model_name=planner_model,
+                    api_key=_get_key_for_model(planner_model),
+                    temperature=0.0,
+                )
+                llm_researcher = get_chat_model(
+                    model_name=researcher_model,
+                    api_key=_get_key_for_model(researcher_model),
+                    temperature=0.1,
+                )
+                llm_reviewer = get_chat_model(
+                    model_name=reviewer_model,
+                    api_key=_get_key_for_model(reviewer_model),
+                    temperature=0.0,
+                )
+                llm_writer = get_chat_model(
+                    model_name=writer_model,
+                    api_key=_get_key_for_model(writer_model),
+                    temperature=0.2,
                 )
 
-        # Compile the graph bound to this run's persistence checkpointer
-        graph = compile_research_graph(
-            llm=llm,
-            llm_planner=llm_planner,
-            llm_researcher=llm_researcher,
-            llm_reviewer=llm_reviewer,
-            llm_writer=llm_writer,
-            evidence_collector=collector,
-            checkpointer=self.checkpointer,
-            run_manager=self.run_manager,
-            idempotency_cache=self.idempotency_cache,
-        )
+                tavily_user_key = user_keys.get("tavily")
+                if tavily_user_key:
+                    from src.tools.evidence_collector import EvidenceCollector
+                    from src.tools.search import MultiSearchClient, TavilySearchClient
 
-        initial_state = create_initial_state(
-            query=request.query,
-            run_id=run_id,
-            max_sub_questions=request.max_sub_questions,
-            max_wall_clock_seconds=request.max_wall_clock_seconds,
-            max_tokens=request.max_tokens,
-            deep_scrape=request.deep_scrape,
-        )
-        config: RunnableConfig = {"configurable": {"thread_id": run_id}}
+                    collector = EvidenceCollector(
+                        search_client=MultiSearchClient(
+                            tavily_client=TavilySearchClient(api_key=tavily_user_key)
+                        )
+                    )
 
-        merged_state: dict[str, Any] = dict(initial_state)
+            # Compile the graph bound to this run's persistence checkpointer
+            graph = compile_research_graph(
+                llm=llm,
+                llm_planner=llm_planner,
+                llm_researcher=llm_researcher,
+                llm_reviewer=llm_reviewer,
+                llm_writer=llm_writer,
+                evidence_collector=collector,
+                checkpointer=self.checkpointer,
+                run_manager=self.run_manager,
+                idempotency_cache=self.idempotency_cache,
+            )
 
-        await self.broadcaster.broadcast(
-            run_id=run_id,
-            event="job_started",
-            data={
-                "status": "planning",
-                "message": "Orchestrator started: generating research plan.",
-            },
-        )
+            initial_state = create_initial_state(
+                query=request.query,
+                run_id=run_id,
+                max_sub_questions=request.max_sub_questions,
+                max_wall_clock_seconds=request.max_wall_clock_seconds,
+                max_tokens=request.max_tokens,
+                deep_scrape=request.deep_scrape,
+            )
+            config: RunnableConfig = {"configurable": {"thread_id": run_id}}
 
-        try:
+            merged_state: dict[str, Any] = dict(initial_state)
+
+            await self.broadcaster.broadcast(
+                run_id=run_id,
+                event="job_started",
+                data={
+                    "status": "planning",
+                    "message": "Orchestrator started: generating research plan.",
+                },
+            )
+
             async for chunk in graph.astream(initial_state, config=config, stream_mode="updates"):
                 if self.queue and await self.queue.is_cancelled(run_id):
                     logger.warning("Research job cancelled via Redis flag", run_id=run_id)
@@ -533,19 +534,54 @@ class ResearchJobService:
             raise
 
         except Exception as e:
+            app_err = classify_error(e)
             logger.error(
-                "Research job execution failed with exception", run_id=run_id, error=str(e)
+                "Research job execution failed",
+                run_id=run_id,
+                code=app_err.code,
+                error=app_err.message,
+                suggestion=app_err.suggestion,
+                details=app_err.details,
             )
             await self.run_manager.update_run_status(
                 run_id=run_id,
                 status="failed",
-                error_message=str(e),
+                error_message=app_err.message,
+                error_code=app_err.code,
+                error_suggestion=app_err.suggestion,
+                error_details=app_err.details,
             )
+            # Assemble failure audit log so /trace endpoint provides diagnostic info
+            try:
+                spans = get_run_spans(run_id)
+                failed_audit_log = AuditLog(
+                    run_id=run_id,
+                    query=request.query,
+                    steps=[],
+                    total_token_usage=TokenUsage(),
+                    total_latency_ms=(time.time() - start_time) * 1000.0,
+                    status="failed",
+                    spans=spans,
+                    error=f"[{app_err.code}] {app_err.message}",
+                )
+                await self.run_manager.save_audit_log(
+                    run_id=run_id,
+                    audit_data=failed_audit_log.model_dump(mode="json"),
+                )
+            except Exception as audit_exc:
+                logger.debug("Failed saving failure audit log", error=str(audit_exc))
+
             await self.run_manager.apply_ttl(run_id)
             await self.broadcaster.broadcast(
                 run_id=run_id,
                 event="job_failed",
-                data={"status": "failed", "error": str(e)},
+                data={
+                    "status": "failed",
+                    "error": app_err.message,
+                    "code": app_err.code,
+                    "suggestion": app_err.suggestion,
+                    "details": app_err.details,
+                },
             )
 
     async def get_status(self, run_id: str) -> ResearchStatusResponse | None:
@@ -616,6 +652,9 @@ class ResearchJobService:
             if rag_score_dict
             else None,
             error_message=meta.get("error_message"),
+            error_code=meta.get("error_code"),
+            error_suggestion=meta.get("error_suggestion"),
+            error_details=meta.get("error_details"),
             created_at=meta.get("created_at"),
             updated_at=meta.get("updated_at"),
         )
@@ -645,7 +684,9 @@ class ResearchJobService:
                 cost_summary=RunCostSummary.model_validate(cost_dict) if cost_dict else None,
                 rag_score=RAGQualityScore.model_validate(rag_dict) if rag_dict else None,
                 spans=effective_spans,
-                error=audit.error,
+                error=audit.error or meta.get("error_message"),
+                error_code=meta.get("error_code"),
+                error_suggestion=meta.get("error_suggestion"),
             )
 
         if not meta:
@@ -665,6 +706,8 @@ class ResearchJobService:
             rag_score=RAGQualityScore.model_validate(rag_dict) if rag_dict else None,
             spans=live_spans,
             error=meta.get("error_message"),
+            error_code=meta.get("error_code"),
+            error_suggestion=meta.get("error_suggestion"),
         )
 
     async def cancel_job(self, run_id: str) -> bool:

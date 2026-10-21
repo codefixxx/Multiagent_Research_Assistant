@@ -7,6 +7,7 @@ with complete source URL, snippet, and timestamp provenance.
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 
+from src.core.exceptions import classify_error
 from src.core.llm import extract_token_usage, get_chat_model
 from src.core.logger import logger
 from src.core.telemetry import ExecutionTimer, TokenUsage
@@ -69,8 +70,24 @@ async def research_subquestion(
     )
 
     timer = ExecutionTimer()
-    with timer:
-        raw_result = await structured_llm.ainvoke(formatted_messages)
+    try:
+        with timer:
+            raw_result = await structured_llm.ainvoke(formatted_messages)
+    except Exception as exc:
+        resolved_model = (
+            getattr(model, "model_name", None)
+            or getattr(model, "model", None)
+            or str(model)
+        )
+        classified = classify_error(exc, model_name=str(resolved_model), node="researcher")
+        logger.error(
+            "Researcher agent failed during LLM execution",
+            sub_question_id=sub_question.id,
+            model=str(resolved_model),
+            code=classified.code,
+            error=classified.message,
+        )
+        raise classified from exc
 
     if isinstance(raw_result, dict) and "parsed" in raw_result:
         output: ResearcherOutput = raw_result["parsed"]
@@ -80,7 +97,19 @@ async def research_subquestion(
         output = raw_result
         token_usage = TokenUsage()
     else:
-        raise ValueError(f"Failed to produce valid ResearcherOutput: {raw_result}")
+        resolved_model = (
+            getattr(model, "model_name", None)
+            or getattr(model, "model", None)
+            or str(model)
+        )
+        from src.core.exceptions import ModelProviderError
+
+        raise ModelProviderError(
+            f"Researcher model failed to produce a valid ResearcherOutput: {raw_result}",
+            provider=None,
+            suggestion="The model failed schema compliance for researcher findings. Consider selecting a model with stronger tool-use capacity.",
+            details={"raw_result": str(raw_result)[:200], "model": str(resolved_model)},
+        )
 
     # Ensure findings are tied to the sub-question id
     for finding in output.findings:

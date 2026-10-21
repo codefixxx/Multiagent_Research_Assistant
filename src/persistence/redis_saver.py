@@ -222,6 +222,9 @@ class RedisRunManager:
         step_count: int | None = None,
         total_tokens: int | None = None,
         error_message: str | None = None,
+        error_code: str | None = None,
+        error_suggestion: str | None = None,
+        error_details: dict[str, Any] | None = None,
         cost_summary: dict[str, Any] | None = None,
         rag_score: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
@@ -243,6 +246,12 @@ class RedisRunManager:
             meta["total_tokens"] = total_tokens
         if error_message is not None:
             meta["error_message"] = error_message
+        if error_code is not None:
+            meta["error_code"] = error_code
+        if error_suggestion is not None:
+            meta["error_suggestion"] = error_suggestion
+        if error_details is not None:
+            meta["error_details"] = error_details
         if cost_summary is not None:
             meta["cost_summary"] = cost_summary
         if rag_score is not None:

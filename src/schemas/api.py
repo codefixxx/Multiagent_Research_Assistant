@@ -107,6 +107,9 @@ class ResearchStatusResponse(BaseModel):
     cost_summary: RunCostSummary | None = None
     rag_score: RAGQualityScore | None = None
     error_message: str | None = None
+    error_code: str | None = None
+    error_suggestion: str | None = None
+    error_details: dict[str, Any] | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -125,6 +128,8 @@ class AuditTraceResponse(BaseModel):
     rag_score: RAGQualityScore | None = None
     spans: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
+    error_code: str | None = None
+    error_suggestion: str | None = None
 
 
 class StreamEventData(BaseModel):
@@ -134,3 +139,23 @@ class StreamEventData(BaseModel):
     run_id: str
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelValidationRequest(BaseModel):
+    """Payload to test and verify LLM credentials and model availability."""
+
+    provider: str | None = Field(default=None, description="LLM provider: gemini, groq, openai, anthropic, ollama")
+    model_name: str | None = Field(default=None, description="Model identifier to test (e.g. 'gemini-2.5-flash')")
+    api_key: str | None = Field(default=None, description="Optional API key to test")
+
+
+class ModelValidationResponse(BaseModel):
+    """Validation response indicating whether model and credentials are functional."""
+
+    valid: bool
+    provider: str
+    model: str
+    message: str
+    code: str | None = None
+    suggestion: str | None = None
+    sample_response: str | None = None

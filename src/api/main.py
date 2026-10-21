@@ -5,15 +5,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from src.api.events import broadcaster
 from src.api.job_runner import job_service
 from src.api.routes import router as research_router
 from src.config import settings
+from src.core.exceptions import ApplicationError, classify_error
 from src.core.logger import logger
 from src.persistence.redis_saver import get_redis_client
 
@@ -45,6 +46,40 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Global Exception Handlers ensuring consistent, structured error responses
+@app.exception_handler(ApplicationError)
+async def application_error_handler(request: Request, exc: ApplicationError) -> JSONResponse:
+    logger.error("Handled ApplicationError", path=request.url.path, code=exc.code, error=exc.message)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=exc.to_dict(),
+    )
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    detail_str = str(exc.detail) if exc.detail else "HTTP Error"
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": detail_str,
+            "code": f"HTTP_{exc.status_code}",
+            "status_code": exc.status_code,
+            "suggestion": "Verify your request parameters or URL path.",
+            "details": {},
+        },
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    app_err = classify_error(exc)
+    logger.error("Unhandled exception caught by global handler", path=request.url.path, code=app_err.code, error=app_err.message)
+    return JSONResponse(
+        status_code=app_err.status_code,
+        content=app_err.to_dict(),
+    )
 
 # Configure CORS
 app.add_middleware(

@@ -9,14 +9,17 @@ from langchain_groq import ChatGroq
 from pydantic import SecretStr
 
 from src.config import settings
+from src.core.exceptions import (
+    ApplicationError,
+    AuthenticationError,
+    InvalidModelError,
+    LLMConfigurationError,
+    ModelProviderError,
+    RateLimitError,
+    classify_error,
+)
 from src.core.logger import logger
 from src.core.telemetry import TokenUsage
-
-
-class LLMConfigurationError(Exception):
-    """Raised when LLM credentials or configuration are invalid."""
-
-    pass
 
 
 def detect_provider(model_name: str | None, default_provider: str | None = None) -> str:
@@ -38,9 +41,114 @@ def detect_provider(model_name: str | None, default_provider: str | None = None)
         or "groq" in m
     ):
         return "groq"
+    if "ollama" in m:
+        return "ollama"
     if m == "mock":
         return "mock"
     return (default_provider or settings.LLM_PROVIDER).lower()
+
+
+def validate_model_configuration(
+    provider: str | None = None,
+    model_name: str | None = None,
+    api_key: str | None = None,
+) -> None:
+    """Validate provider, model selection, and key presence without initiating external network calls."""
+    target_provider = (provider or detect_provider(model_name)).lower()
+    valid_providers = {"gemini", "groq", "openai", "anthropic", "ollama", "mock"}
+    if target_provider not in valid_providers:
+        raise InvalidModelError(
+            f"Unsupported LLM provider: '{target_provider}'. Supported: {', '.join(sorted(valid_providers))}.",
+            model_name=model_name,
+            provider=target_provider,
+            suggestion=f"Please specify a supported provider from: {', '.join(sorted(valid_providers))}.",
+        )
+
+    # Check key requirements
+    if target_provider == "gemini" and not (api_key or settings.GEMINI_API_KEY or settings.GROQ_API_KEY):
+        raise AuthenticationError(
+            "GEMINI_API_KEY is not configured.",
+            provider="gemini",
+            suggestion="Please provide a Gemini API key in Settings or set GEMINI_API_KEY in .env.",
+        )
+    if target_provider == "groq" and not (api_key or settings.GROQ_API_KEY or settings.GEMINI_API_KEY):
+        raise AuthenticationError(
+            "GROQ_API_KEY is not configured.",
+            provider="groq",
+            suggestion="Please provide a Groq API key in Settings or set GROQ_API_KEY in .env.",
+        )
+    if target_provider == "openai" and not (api_key or settings.OPENAI_API_KEY):
+        raise AuthenticationError(
+            "OPENAI_API_KEY is not configured.",
+            provider="openai",
+            suggestion="Please provide an OpenAI API key in Settings or set OPENAI_API_KEY in .env.",
+        )
+    if target_provider == "anthropic" and not (api_key or settings.ANTHROPIC_API_KEY):
+        raise AuthenticationError(
+            "ANTHROPIC_API_KEY is not configured.",
+            provider="anthropic",
+            suggestion="Please provide an Anthropic API key in Settings or set ANTHROPIC_API_KEY in .env.",
+        )
+
+
+async def verify_model_connectivity(
+    provider: str | None = None,
+    model_name: str | None = None,
+    api_key: str | None = None,
+    timeout_seconds: float = 12.0,
+) -> dict[str, Any]:
+    """Test connection to the specified LLM to verify credentials and model availability.
+
+    Returns a dict on success or raises classified ApplicationError (e.g. AuthenticationError, InvalidModelError).
+    """
+    import asyncio
+    from langchain_core.messages import HumanMessage
+
+    validate_model_configuration(provider=provider, model_name=model_name, api_key=api_key)
+    target_provider = (provider or detect_provider(model_name)).lower()
+    chat_model = get_chat_model(
+        provider=target_provider,
+        model_name=model_name,
+        api_key=api_key,
+        temperature=0.0,
+        max_tokens=10,
+    )
+
+    test_message = [HumanMessage(content="Respond with 'OK'.")]
+    try:
+        response = await asyncio.wait_for(
+            chat_model.ainvoke(test_message),
+            timeout=timeout_seconds,
+        )
+        content = getattr(response, "content", "OK")
+        resolved_name = (
+            model_name
+            or getattr(chat_model, "model_name", None)
+            or getattr(chat_model, "model", None)
+            or target_provider
+        )
+        return {
+            "valid": True,
+            "provider": target_provider,
+            "model": str(resolved_name),
+            "message": "Model connection and authentication verified successfully.",
+            "sample_response": str(content)[:50],
+        }
+    except Exception as exc:
+        classified = classify_error(
+            exc,
+            provider=target_provider,
+            model_name=model_name,
+            node="model_verifier",
+        )
+        logger.warning(
+            "Model connectivity test failed",
+            provider=target_provider,
+            model=model_name,
+            code=classified.code,
+            error=classified.message,
+        )
+        raise classified from exc
 
 
 def get_chat_model(
@@ -57,6 +165,7 @@ def get_chat_model(
         - "openai": OpenAI GPT models (GPT-4o, GPT-4o-mini, etc.).
         - "anthropic": Anthropic Claude models (Claude 3.5 Sonnet, Haiku, etc.).
         - "groq": Fast open-source inference with Llama 3.3 70B.
+        - "ollama": Local inference models via Ollama.
         - "mock": Mock chat model for testing without API keys.
     """
     target_provider = (provider or detect_provider(model_name)).lower()
@@ -155,6 +264,22 @@ def get_chat_model(
             max_tokens=max_tokens or 4096,
         )
 
+    if target_provider == "ollama":
+        active_model = model_name or settings.OLLAMA_MODEL
+        logger.info("Initializing Ollama Chat Model", provider="ollama", model=active_model)
+        try:
+            from langchain_community.chat_models import ChatOllama
+
+            return ChatOllama(
+                base_url=settings.OLLAMA_BASE_URL,
+                model=active_model,
+                temperature=temperature,
+            )
+        except ImportError:
+            raise LLMConfigurationError(
+                "langchain-community is required for Ollama provider. Please install it."
+            )
+
     if target_provider == "mock":
         from tests.conftest import MockChatModel
 
@@ -162,7 +287,7 @@ def get_chat_model(
         return MockChatModel()
 
     raise LLMConfigurationError(
-        f"Unsupported LLM provider: '{target_provider}'. Supported: gemini, openai, anthropic, groq, mock."
+        f"Unsupported LLM provider: '{target_provider}'. Supported: gemini, openai, anthropic, groq, ollama, mock."
     )
 
 

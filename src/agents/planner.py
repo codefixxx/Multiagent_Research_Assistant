@@ -7,6 +7,7 @@ Enforces Pydantic schema validation.
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 
+from src.core.exceptions import classify_error
 from src.core.llm import extract_token_usage, get_chat_model
 from src.core.logger import logger
 from src.core.telemetry import ExecutionTimer, TokenUsage
@@ -64,8 +65,23 @@ async def plan_research(
     formatted_messages = prompt.format_messages()
 
     timer = ExecutionTimer()
-    with timer:
-        raw_result = await structured_llm.ainvoke(formatted_messages)
+    try:
+        with timer:
+            raw_result = await structured_llm.ainvoke(formatted_messages)
+    except Exception as exc:
+        resolved_model = (
+            getattr(model, "model_name", None)
+            or getattr(model, "model", None)
+            or str(model)
+        )
+        classified = classify_error(exc, model_name=str(resolved_model), node="planner")
+        logger.error(
+            "Planner agent failed during LLM execution",
+            model=str(resolved_model),
+            code=classified.code,
+            error=classified.message,
+        )
+        raise classified from exc
 
     # raw_result has keys: 'raw', 'parsed', 'parsing_error'
     if isinstance(raw_result, dict) and "parsed" in raw_result:
@@ -76,7 +92,19 @@ async def plan_research(
         parsed_plan = raw_result
         token_usage = TokenUsage()
     else:
-        raise ValueError(f"Failed to produce valid ResearchPlan: {raw_result}")
+        resolved_model = (
+            getattr(model, "model_name", None)
+            or getattr(model, "model", None)
+            or str(model)
+        )
+        from src.core.exceptions import ModelProviderError
+
+        raise ModelProviderError(
+            f"Planner model failed to produce a valid ResearchPlan: {raw_result}",
+            provider=None,
+            suggestion="The model may lack structured output instruction capacity. Please choose a higher capability model (e.g. Gemini 2.5 Flash, GPT-4o-mini).",
+            details={"raw_result": str(raw_result)[:200], "model": str(resolved_model)},
+        )
 
     # Enforce strict upper bound on sub-question count if specified
     if max_sub_questions and max_sub_questions > 0:

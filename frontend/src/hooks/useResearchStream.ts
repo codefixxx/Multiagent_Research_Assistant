@@ -241,6 +241,9 @@ export function useResearchStream() {
           setIsDispatching(false);
           stopTimer();
           appendLog('SYSTEM', `Run failed: ${payload.error || 'Execution encountered an error'}`, 'error');
+          if (payload.suggestion) {
+            appendLog('SYSTEM', `💡 Actionable fix: ${payload.suggestion}`, 'system');
+          }
           break;
       }
     } catch (e) {
@@ -362,7 +365,10 @@ export function useResearchStream() {
       });
 
       if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}`);
+        const errJson = await res.json().catch(() => ({}));
+        const errMsg = errJson.error || errJson.detail || errJson.message || `Server returned HTTP ${res.status}`;
+        const suggestion = errJson.suggestion ? ` (💡 ${errJson.suggestion})` : '';
+        throw new Error(`${errMsg}${suggestion}`);
       }
 
       const data = await res.json();

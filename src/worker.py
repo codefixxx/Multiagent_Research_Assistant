@@ -11,6 +11,7 @@ from typing import Any
 from src.api.events import broadcaster
 from src.api.job_runner import ResearchJobService
 from src.config import settings
+from src.core.exceptions import classify_error
 from src.core.logger import logger
 from src.persistence.queue import RedisJobQueue
 from src.persistence.redis_saver import get_redis_client
@@ -115,18 +116,35 @@ class ResearchWorker:
             await self.job_service._execute_job(run_id=run_id, request=request, llm=llm_to_use)
             logger.info("Worker successfully completed research job", worker_id=self.worker_id, run_id=run_id)
         except Exception as e:
-            logger.error("Worker failed processing job", worker_id=self.worker_id, run_id=run_id, error=str(e))
+            app_err = classify_error(e)
+            logger.error(
+                "Worker failed processing job",
+                worker_id=self.worker_id,
+                run_id=run_id,
+                code=app_err.code,
+                error=app_err.message,
+                suggestion=app_err.suggestion,
+            )
             if self.job_service and self.job_service.run_manager:
                 try:
                     await self.job_service.run_manager.update_run_status(
                         run_id=run_id,
                         status="failed",
-                        error_message=str(e),
+                        error_message=app_err.message,
+                        error_code=app_err.code,
+                        error_suggestion=app_err.suggestion,
+                        error_details=app_err.details,
                     )
                     await self.job_service.broadcaster.broadcast(
                         run_id=run_id,
                         event="job_failed",
-                        data={"status": "failed", "error": str(e)},
+                        data={
+                            "status": "failed",
+                            "error": app_err.message,
+                            "code": app_err.code,
+                            "suggestion": app_err.suggestion,
+                            "details": app_err.details,
+                        },
                     )
                 except Exception:
                     pass
