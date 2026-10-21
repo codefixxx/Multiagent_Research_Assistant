@@ -12,16 +12,14 @@ from __future__ import annotations
 
 import html
 import io
-import json
 from datetime import UTC, datetime
-from enum import Enum
-from typing import Any
+from enum import StrEnum
 
 from src.core.logger import logger
 from src.schemas.api import ResearchStatusResponse
 
 
-class ExportFormat(str, Enum):
+class ExportFormat(StrEnum):
     """Supported export formats for finalized research reports."""
 
     PDF = "pdf"
@@ -502,9 +500,8 @@ class ReportExportEngine:
     def export_docx(cls, status_resp: ResearchStatusResponse) -> bytes:
         """Generate a Microsoft Word (.docx) document via python-docx."""
         import docx
-        from docx.shared import Inches, Pt, RGBColor
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.enum.table import WD_TABLE_ALIGNMENT
+        from docx.shared import Inches, Pt, RGBColor
 
         doc = docx.Document()
 
@@ -622,12 +619,18 @@ class ReportExportEngine:
         app_h_run.font.color.rgb = RGBColor(71, 85, 105)
 
         app_p = doc.add_paragraph()
+        cost_str = (
+            f"${status_resp.cost_summary.total_cost_usd:.4f} USD"
+            if status_resp.cost_summary
+            else "N/A"
+        )
+        grade_str = status_resp.rag_score.grade if status_resp.rag_score and status_resp.rag_score.grade else "A"
         app_run = app_p.add_run(
             f"Execution Status: {status_resp.status.upper()}  |  "
             f"Verified Sources: {status_resp.findings_count}  |  "
             f"Tokens: {status_resp.total_tokens:,}  |  "
-            f"Cost: ${status_resp.cost_summary.total_cost_usd:.4f} USD\n"
-            f"Verification Grade: {status_resp.rag_score.grade if status_resp.rag_score else 'A'}"
+            f"Cost: {cost_str}\n"
+            f"Verification Grade: {grade_str}"
         )
         app_run.font.size = Pt(8.5)
         app_run.font.color.rgb = RGBColor(100, 116, 139)

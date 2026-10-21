@@ -14,6 +14,7 @@ from src.schemas.trace import StepTrace
 RunStatus = Literal[
     "planning",
     "researching",
+    "gap_filling",
     "reviewing",
     "writing",
     "completed",
@@ -59,6 +60,10 @@ class ResearchState(TypedDict, total=False):
     # Review loop control (STRICT CAP: max 1 revision per sub-question)
     revision_count: int
     review_feedback: str | None
+
+    # Deep Research Gap-Filling Loop (STRICT CAP: max 1 global re-search pass)
+    gap_fill_attempts: int
+    unresolved_gaps: list[str]
 
     # Final report artifact
     report: ResearchReport | None

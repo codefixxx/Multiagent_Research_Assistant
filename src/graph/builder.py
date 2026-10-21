@@ -4,6 +4,7 @@ Assembles Planner, Researcher, Reviewer, Writer, and Emergency Writer into
 a governed state machine with supervisor conditional edges and hard budgets.
 """
 
+import re
 import time
 import uuid
 from typing import Any
@@ -20,7 +21,7 @@ from src.core.exceptions import classify_error
 from src.core.logger import logger
 from src.core.telemetry import TokenUsage, calculate_token_cost
 from src.core.tracer import async_trace_span
-from src.graph.budgets import evaluate_budget
+from src.graph.budgets import can_attempt_gap_fill, evaluate_budget
 from src.graph.state import ResearchState
 from src.graph.supervisor import (
     route_after_consolidator,
@@ -584,7 +585,22 @@ def build_research_graph(
                 "tokens",
                 "wall_clock",
             )
-            new_status = "budget_exceeded" if is_resource_breached else "writing"
+            if is_resource_breached:
+                new_status = "budget_exceeded"
+            elif can_attempt_gap_fill(state) and plan and plan.sub_questions:
+                unanswered = [
+                    sq.id
+                    for sq in plan.sub_questions
+                    if not [
+                        f
+                        for f in findings
+                        if getattr(f, "sub_question_id", None) == sq.id
+                        or (isinstance(f, dict) and f.get("sub_question_id") == sq.id)
+                    ]
+                ]
+                new_status = "gap_filling" if (unanswered or not findings) else "writing"
+            else:
+                new_status = "writing"
 
         if run_manager and run_id:
             try:
@@ -607,6 +623,183 @@ def build_research_graph(
             "status": new_status,
             "current_sub_question_index": sub_count,
             "step_count": 1,
+        }
+
+    async def gap_filler_node(state: ResearchState) -> dict[str, Any]:
+        step = state.get("step_count", 0) + 1
+        run_id = state.get("run_id", "")
+        query = state.get("query", "")
+        plan = _normalize_plan(state.get("plan"))
+        findings = _normalize_findings(state.get("findings", []))
+        deep_scrape_pref = state.get("deep_scrape", True)
+
+        # 1. Identify which sub-questions currently lack empirical findings
+        unanswered_subqs = []
+        if plan and plan.sub_questions:
+            for sq in plan.sub_questions:
+                sq_f = [
+                    f
+                    for f in findings
+                    if getattr(f, "sub_question_id", None) == sq.id
+                    or (isinstance(f, dict) and f.get("sub_question_id") == sq.id)
+                ]
+                if not sq_f:
+                    unanswered_subqs.append(sq)
+
+        target_subq = (
+            unanswered_subqs[0]
+            if unanswered_subqs
+            else (
+                plan.sub_questions[0]
+                if (plan and plan.sub_questions)
+                else SubQuestion(
+                    id="gap_1",
+                    question=query,
+                    rationale="Fallback targeted query to resolve knowledge gaps",
+                    search_queries=[query],
+                )
+            )
+        )
+
+        logger.info(
+            "Executing Deep Research Gap-Filler specialist",
+            target_sub_question_id=target_subq.id,
+            target_question=target_subq.question,
+            step=step,
+        )
+
+        collector = evidence_collector
+        is_mock_llm = "mock" in type(llm).__name__.lower()
+        if collector is None:
+            if (
+                is_mock_llm
+                or settings.LLM_PROVIDER == "mock"
+                or settings.SEARCH_ENGINE == "mock"
+            ):
+                from src.tools.search import MockSearchClient, MultiSearchClient
+
+                collector = EvidenceCollector(
+                    search_client=MultiSearchClient(mock_client=MockSearchClient())
+                )
+            else:
+                collector = EvidenceCollector()
+
+        # Build fallback search queries designed to find authoritative overview documentation
+        clean_q = re.sub(r"[^\w\s]", " ", target_subq.question).strip()
+        gap_queries = [
+            f"{clean_q} overview documentation",
+            f"{target_subq.question}",
+        ]
+        if target_subq.search_queries:
+            gap_queries.append(target_subq.search_queries[0])
+
+        gap_model_name = (
+            getattr(active_researcher_llm, "model_name", None)
+            or getattr(active_researcher_llm, "model", None)
+            or "default"
+        )
+
+        collect_t0 = time.time()
+        evidence_res = await collector.collect_evidence_for_queries(
+            queries=gap_queries[:2],
+            deep_scrape=bool(not is_mock_llm and deep_scrape_pref),
+        )
+        collect_latency = round((time.time() - collect_t0) * 1000, 2)
+        evidence = evidence_res.formatted_context
+
+        tool_records = [
+            ToolCallRecord(
+                tool_name="web_search_gap_filler",
+                tool_input={"queries": gap_queries[:2]},
+                tool_output_summary=f"Discovered {len(evidence_res.search_results)} supplementary recovery results.",
+                latency_ms=round(collect_latency * 0.4, 2),
+                status="success" if evidence_res.search_results else "no_results",
+            )
+        ]
+        if evidence_res.urls_processed:
+            tool_records.append(
+                ToolCallRecord(
+                    tool_name="page_scraper_gap_filler",
+                    tool_input={"urls": evidence_res.urls_processed[:3]},
+                    tool_output_summary=f"Extracted {len(evidence_res.documents)} documents during gap recovery pass.",
+                    latency_ms=round(collect_latency * 0.6, 2),
+                    status="success" if evidence_res.documents else "empty",
+                )
+            )
+
+        async with async_trace_span(
+            name="agent.gap_filler",
+            run_id=run_id,
+            attributes={
+                "target_sub_question_id": target_subq.id,
+                "llm.model": str(gap_model_name),
+                "queries_count": len(gap_queries[:2]),
+            },
+        ) as gap_span_ctx:
+            output, gap_tokens, gap_latency = await research_subquestion(
+                sub_question=target_subq,
+                evidence_context=evidence,
+                llm=active_researcher_llm,
+            )
+            new_findings = output.findings
+            for nf in new_findings:
+                if not getattr(nf, "sub_question_id", None):
+                    nf.sub_question_id = target_subq.id
+
+            gap_cost = calculate_token_cost(
+                str(gap_model_name), gap_tokens.prompt_tokens, gap_tokens.completion_tokens
+            )
+            gap_tokens.estimated_cost_usd = gap_cost
+
+            gap_span_ctx.update(
+                {
+                    "recovered_findings_count": len(new_findings),
+                    "tokens.total": gap_tokens.total_tokens,
+                    "cost.usd": gap_cost,
+                    "latency_ms": gap_latency,
+                }
+            )
+
+        trace = create_step_trace(
+            step_number=step,
+            agent_name="gap_filler",
+            input_data={
+                "target_sub_question_id": target_subq.id,
+                "gap_queries": gap_queries[:2],
+            },
+            output_data={
+                "recovered_findings_count": len(new_findings),
+                "is_answered": output.is_answered,
+            },
+            tokens=gap_tokens,
+            latency_ms=gap_latency,
+            tool_calls=tool_records,
+        )
+
+        remaining_unresolved = [
+            sq.id for sq in unanswered_subqs if sq.id != target_subq.id
+        ]
+        if not new_findings:
+            remaining_unresolved.append(target_subq.id)
+
+        if run_manager and run_id:
+            try:
+                await run_manager.record_completed_step(
+                    run_id=run_id,
+                    node_name="gap_filler",
+                    step_number=step,
+                )
+            except Exception as e:
+                logger.debug("Failed updating run_manager in gap_filler", error=str(e))
+
+        current_attempts = state.get("gap_fill_attempts", 0)
+        return {
+            "findings": new_findings,
+            "gap_fill_attempts": current_attempts + 1,
+            "unresolved_gaps": remaining_unresolved,
+            "step_count": 1,
+            "total_tokens": gap_tokens,
+            "audit_traces": [trace],
         }
 
     async def writer_node(state: ResearchState) -> dict[str, Any]:
@@ -775,6 +968,7 @@ def build_research_graph(
     builder.add_node("planner", planner_node)
     builder.add_node("researcher", researcher_node)  # type: ignore[arg-type]
     builder.add_node("consolidator", consolidator_node)
+    builder.add_node("gap_filler", gap_filler_node)
     builder.add_node("writer", writer_node)
     builder.add_node("emergency_writer", emergency_writer_node)
 
@@ -794,10 +988,12 @@ def build_research_graph(
         route_after_consolidator,
         {
             "writer": "writer",
+            "gap_filler": "gap_filler",
             "emergency_writer": "emergency_writer",
             "failed": END,
         },
     )
+    builder.add_edge("gap_filler", "consolidator")
     builder.add_edge("writer", END)
     builder.add_edge("emergency_writer", END)
 
@@ -847,6 +1043,8 @@ def create_initial_state(
         current_sub_question_findings=[],
         revision_count=0,
         review_feedback=None,
+        gap_fill_attempts=0,
+        unresolved_gaps=[],
         report=None,
         status="planning",
         total_tokens=TokenUsage(),

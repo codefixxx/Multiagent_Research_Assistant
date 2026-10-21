@@ -12,13 +12,14 @@ from langgraph.graph import END
 from langgraph.types import Send
 
 from src.core.logger import logger
-from src.graph.budgets import evaluate_budget
+from src.graph.budgets import can_attempt_gap_fill, evaluate_budget
 from src.graph.state import ResearchState
 
 SupervisorDecision = Literal[
     "researcher",
     "reviewer",
     "consolidator",
+    "gap_filler",
     "writer",
     "emergency_writer",
     "failed",
@@ -94,10 +95,17 @@ def route_after_planner(state: ResearchState) -> list[Send] | str:
 
 
 def route_after_consolidator(state: ResearchState) -> str:
-    """Evaluate budget and findings after all parallel workers join.
+    """Evaluate budget, findings, and knowledge gaps after parallel workers join.
 
-    Routes to emergency writer if token or time budgets were exceeded during
-    parallel research passes, otherwise advances to the writer node.
+    Workflow & Circuit Breaking:
+    1. If token budget or wall-clock limits are breached -> emergency_writer.
+    2. If no findings were gathered and no plan exists -> failed.
+    3. Deep Research Gap-Filling Gate:
+       - If any planned sub-question has 0 findings (or findings are completely empty),
+       - AND the run has not yet performed a gap-fill pass (gap_fill_attempts < 1),
+       - AND sufficient budget headroom exists (>= 20s wall-clock):
+       -> Routes to 'gap_filler' for a single targeted recovery pass.
+    4. Otherwise (no gaps, or gap fill pass already completed) -> writer.
     """
     budget = evaluate_budget(state)
     is_resource_breached = budget.is_exceeded and budget.exceeded_metric in ("tokens", "wall_clock")
@@ -109,9 +117,33 @@ def route_after_consolidator(state: ResearchState) -> str:
         return "emergency_writer"
 
     findings = state.get("findings", [])
-    if not findings and not state.get("plan"):
+    plan = _normalize_plan(state.get("plan"))
+    if not findings and not plan:
         logger.error("No findings gathered and no valid plan; routing to failed")
         return "failed"
+
+    # Deep Research Iterative Gap-Filling Check
+    if can_attempt_gap_fill(state) and plan and plan.sub_questions:
+        unanswered_subqs = []
+        for sq in plan.sub_questions:
+            sq_findings = [
+                f for f in findings
+                if getattr(f, "sub_question_id", None) == sq.id
+                or (isinstance(f, dict) and f.get("sub_question_id") == sq.id)
+            ]
+            if not sq_findings:
+                unanswered_subqs.append(sq.id)
+
+        # Trigger gap filler if at least one sub-question has 0 findings
+        # or if total findings are empty despite having a plan
+        if unanswered_subqs or not findings:
+            logger.info(
+                "Supervisor detected research gap(s); routing to gap_filler for targeted re-search",
+                unanswered_sub_questions=unanswered_subqs,
+                total_findings=len(findings),
+                gap_fill_attempts=state.get("gap_fill_attempts", 0),
+            )
+            return "gap_filler"
 
     logger.info("Supervisor routing to writer for final report synthesis")
     return "writer"

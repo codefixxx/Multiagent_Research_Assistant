@@ -27,6 +27,7 @@ class BudgetLimits(BaseModel):
     max_revisions_per_subquestion: int = Field(
         default_factory=lambda: settings.MAX_REVISIONS_PER_SUBQUESTION
     )
+    max_gap_fill_passes: int = Field(default=1)
 
 
 class BudgetCheckResult(BaseModel):
@@ -118,3 +119,46 @@ def evaluate_budget(
         )
 
     return BudgetCheckResult(is_exceeded=False)
+
+
+def can_attempt_gap_fill(
+    state: ResearchState,
+    limits: BudgetLimits | None = None,
+    min_headroom_seconds: float = 20.0,
+) -> bool:
+    """Determine whether the research run has operational budget headroom to perform a gap fill pass.
+
+    Strictly guarantees that:
+    1. The run has executed fewer than max_gap_fill_passes (default: 1).
+    2. Neither the token budget nor wall-clock limits have been breached.
+    3. At least min_headroom_seconds remain before hitting the hard wall-clock ceiling.
+    """
+    effective_limits = limits or BudgetLimits(
+        max_wall_clock_seconds=float(state.get("max_wall_clock_seconds") or settings.MAX_WALL_CLOCK_SECONDS),
+        max_budget_tokens=state.get("max_tokens") or settings.MAX_BUDGET_TOKENS,
+    )
+
+    # 1. Enforce strict single-pass gap fill cap
+    current_passes = state.get("gap_fill_attempts", 0)
+    if current_passes >= effective_limits.max_gap_fill_passes:
+        return False
+
+    # 2. Check general budget status
+    budget = evaluate_budget(state, effective_limits)
+    if budget.is_exceeded:
+        return False
+
+    # 3. Check remaining wall-clock headroom
+    start_time = state.get("start_time", 0.0)
+    if start_time > 0:
+        elapsed = time.time() - start_time
+        remaining = effective_limits.max_wall_clock_seconds - elapsed
+        if remaining < min_headroom_seconds:
+            logger.info(
+                "Skipping gap fill pass: insufficient wall-clock headroom",
+                remaining_seconds=round(remaining, 1),
+                min_required=min_headroom_seconds,
+            )
+            return False
+
+    return True

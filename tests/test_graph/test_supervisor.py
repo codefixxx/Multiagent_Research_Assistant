@@ -71,6 +71,87 @@ def test_route_after_consolidator():
     assert route_after_consolidator(breached_state) == "emergency_writer"
 
 
+def test_route_after_consolidator_detects_gap_and_routes_to_gap_filler():
+    """Supervisor must route to gap_filler when a sub-question lacks findings and attempts < 1."""
+    plan = ResearchPlan(
+        query="Test query",
+        objective="Test objective",
+        sub_questions=[
+            SubQuestion(id="sq_1", question="Q1", rationale="R1"),
+            SubQuestion(id="sq_2", question="Q2", rationale="R2"),
+        ],
+    )
+    # Only sq_1 was answered; sq_2 has 0 findings
+    gap_state = ResearchState(
+        plan=plan,
+        findings=[
+            FindingRecord(
+                id="f_1",
+                sub_question_id="sq_1",
+                claim="Claim 1",
+                source_url="https://example.com",
+                snippet="Snippet 1",
+            )
+        ],
+        gap_fill_attempts=0,
+        start_time=time.time(),
+        total_tokens=TokenUsage(total_tokens=1000),
+    )
+    assert route_after_consolidator(gap_state) == "gap_filler"
+
+
+def test_route_after_consolidator_enforces_single_gap_fill_pass_cap():
+    """Supervisor must NEVER execute more than 1 gap-fill pass even if gaps remain."""
+    plan = ResearchPlan(
+        query="Test query",
+        objective="Test objective",
+        sub_questions=[
+            SubQuestion(id="sq_1", question="Q1", rationale="R1"),
+            SubQuestion(id="sq_2", question="Q2", rationale="R2"),
+        ],
+    )
+    # Gaps still exist, but gap_fill_attempts is already 1
+    post_gap_state = ResearchState(
+        plan=plan,
+        findings=[
+            FindingRecord(
+                id="f_1",
+                sub_question_id="sq_1",
+                claim="Claim 1",
+                source_url="https://example.com",
+                snippet="Snippet 1",
+            )
+        ],
+        gap_fill_attempts=1,
+        start_time=time.time(),
+        total_tokens=TokenUsage(total_tokens=1500),
+    )
+    assert route_after_consolidator(post_gap_state) == "writer"
+
+
+def test_route_after_consolidator_skips_gap_filler_when_wall_clock_low():
+    """Supervisor must skip gap_filler if remaining wall-clock time is insufficient (< 20s)."""
+    plan = ResearchPlan(
+        query="Test query",
+        objective="Test objective",
+        sub_questions=[
+            SubQuestion(id="sq_1", question="Q1", rationale="R1"),
+            SubQuestion(id="sq_2", question="Q2", rationale="R2"),
+        ],
+    )
+    # 110s elapsed out of 120s limit (only 10s remaining, less than 20s required)
+    low_time_state = ResearchState(
+        plan=plan,
+        findings=[],
+        gap_fill_attempts=0,
+        start_time=time.time() - 110.0,
+        max_wall_clock_seconds=120.0,
+        total_tokens=TokenUsage(total_tokens=1000),
+    )
+    # Skips gap filler and advances directly to writer
+    assert route_after_consolidator(low_time_state) == "writer"
+
+
 def test_supervisor_single_pass_revision_gate():
     """Supervisor must allow at most ONE revision pass per sub-question."""
     plan = ResearchPlan(

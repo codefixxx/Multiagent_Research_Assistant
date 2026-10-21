@@ -337,13 +337,30 @@ class ResearchJobService:
 
                     elif node_name == "consolidator":
                         findings = merged_state.get("findings", [])
+                        current_status = node_output.get("status", "writing")
                         await self.broadcaster.broadcast(
                             run_id=run_id,
                             event="consolidator_completed",
                             data={
                                 "node": "consolidator",
-                                "status": "writing",
+                                "status": current_status,
                                 "total_findings_count": len(findings),
+                            },
+                        )
+
+                    elif node_name == "gap_filler":
+                        findings = merged_state.get("findings", [])
+                        new_findings = node_output.get("findings", [])
+                        unresolved = node_output.get("unresolved_gaps", [])
+                        await self.broadcaster.broadcast(
+                            run_id=run_id,
+                            event="gap_filler_completed",
+                            data={
+                                "node": "gap_filler",
+                                "status": "researching",
+                                "new_findings_count": len(new_findings),
+                                "total_findings_count": len(findings),
+                                "unresolved_gaps": unresolved,
                             },
                         )
 
