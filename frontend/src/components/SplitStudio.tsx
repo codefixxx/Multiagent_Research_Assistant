@@ -19,7 +19,10 @@ import {
   Cpu,
   XCircle,
   SlidersHorizontal,
-  RefreshCw
+  RefreshCw,
+  ShieldAlert,
+  Layers,
+  FileCode2
 } from 'lucide-react';
 
 interface SplitStudioProps {
@@ -94,12 +97,90 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     return code.includes('model') || msg.includes('not found') || msg.includes('does not exist') || msg.includes('404');
   }, [jobData]);
 
+  const isContextLimit = useMemo(() => {
+    const code = (jobData?.error_code || '').toLowerCase();
+    const msg = (jobData?.error_message || '').toLowerCase();
+    return code.includes('context_length') || msg.includes('context length') || msg.includes('too many tokens') || msg.includes('context window') || msg.includes('token count');
+  }, [jobData]);
+
+  const isContentPolicy = useMemo(() => {
+    const code = (jobData?.error_code || '').toLowerCase();
+    const msg = (jobData?.error_message || '').toLowerCase();
+    return code.includes('content_moderation') || code.includes('safety') || msg.includes('safety') || msg.includes('content policy') || msg.includes('blocked');
+  }, [jobData]);
+
+  const isSchemaError = useMemo(() => {
+    const code = (jobData?.error_code || '').toLowerCase();
+    const msg = (jobData?.error_message || '').toLowerCase();
+    return code.includes('schema') || code.includes('parsing') || msg.includes('structured output') || msg.includes('schema validation');
+  }, [jobData]);
+
   const errorTitle = useMemo(() => {
     if (isRateLimit) return 'Model Quota or Rate Limit Reached';
     if (isAuth) return 'API Key Authentication Failed';
     if (isModelNotFound) return 'Model Unavailable or Not Found';
+    if (isContextLimit) return 'Model Context Window Exceeded';
+    if (isContentPolicy) return 'Content Blocked by Safety Filters';
+    if (isSchemaError) return 'Structured Output Schema Validation Failed';
     return 'Research Job Failed';
-  }, [isRateLimit, isAuth, isModelNotFound]);
+  }, [isRateLimit, isAuth, isModelNotFound, isContextLimit, isContentPolicy, isSchemaError]);
+
+  const errorTheme = useMemo(() => {
+    if (isRateLimit) {
+      return {
+        card: 'bg-[#d9a441]/10 border-[#d9a441]/35',
+        iconBg: 'bg-[#d9a441]/20 text-[#d9a441]',
+        badge: 'bg-[#d9a441]/25 text-[#d9a441] border border-[#d9a441]/40',
+        defaultCode: 'RATE_LIMIT_429',
+      };
+    }
+    if (isAuth) {
+      return {
+        card: 'bg-[#e5566f]/10 border-[#e5566f]/35',
+        iconBg: 'bg-[#e5566f]/20 text-[#e5566f]',
+        badge: 'bg-[#e5566f]/25 text-[#e5566f] border border-[#e5566f]/40',
+        defaultCode: 'AUTH_401',
+      };
+    }
+    if (isModelNotFound) {
+      return {
+        card: 'bg-[#8b5cf6]/10 border-[#8b5cf6]/35',
+        iconBg: 'bg-[#8b5cf6]/20 text-[#8b5cf6]',
+        badge: 'bg-[#8b5cf6]/25 text-[#8b5cf6] border border-[#8b5cf6]/40',
+        defaultCode: 'MODEL_404',
+      };
+    }
+    if (isContextLimit) {
+      return {
+        card: 'bg-[#06b6d4]/10 border-[#06b6d4]/35',
+        iconBg: 'bg-[#06b6d4]/20 text-[#06b6d4]',
+        badge: 'bg-[#06b6d4]/25 text-[#06b6d4] border border-[#06b6d4]/40',
+        defaultCode: 'CONTEXT_WINDOW_LIMIT',
+      };
+    }
+    if (isContentPolicy) {
+      return {
+        card: 'bg-[#f97316]/10 border-[#f97316]/35',
+        iconBg: 'bg-[#f97316]/20 text-[#f97316]',
+        badge: 'bg-[#f97316]/25 text-[#f97316] border border-[#f97316]/40',
+        defaultCode: 'CONTENT_MODERATION',
+      };
+    }
+    if (isSchemaError) {
+      return {
+        card: 'bg-[#a855f7]/10 border-[#a855f7]/35',
+        iconBg: 'bg-[#a855f7]/20 text-[#a855f7]',
+        badge: 'bg-[#a855f7]/25 text-[#a855f7] border border-[#a855f7]/40',
+        defaultCode: 'SCHEMA_PARSE_ERROR',
+      };
+    }
+    return {
+      card: 'bg-[#e5566f]/10 border-[#e5566f]/35',
+      iconBg: 'bg-[#e5566f]/20 text-[#e5566f]',
+      badge: 'bg-[#e5566f]/25 text-[#e5566f] border border-[#e5566f]/40',
+      defaultCode: 'SERVER_ERROR',
+    };
+  }, [isRateLimit, isAuth, isModelNotFound, isContextLimit, isContentPolicy, isSchemaError]);
 
   const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -375,44 +456,25 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
               jobData?.status === 'failed' || jobData?.error_message ? (
                 <div className="py-8 px-4 max-w-xl mx-auto space-y-4 animate-in fade-in duration-200">
                   {/* Actionable Error Card Container */}
-                  <div className={`p-5 sm:p-6 rounded-lg border ${
-                    isRateLimit 
-                      ? 'bg-[#d9a441]/10 border-[#d9a441]/35' 
-                      : isAuth 
-                      ? 'bg-[#e5566f]/10 border-[#e5566f]/35' 
-                      : isModelNotFound
-                      ? 'bg-[#8b5cf6]/10 border-[#8b5cf6]/35'
-                      : 'bg-[#e5566f]/10 border-[#e5566f]/35'
-                  }`}>
+                  <div className={`p-5 sm:p-6 rounded-lg border ${errorTheme.card}`}>
                     {/* Header with Title and Icon */}
                     <div className="flex items-start space-x-3.5 mb-3.5">
-                      <div className={`p-2.5 rounded-md shrink-0 ${
-                        isRateLimit 
-                          ? 'bg-[#d9a441]/20 text-[#d9a441]' 
-                          : isAuth 
-                          ? 'bg-[#e5566f]/20 text-[#e5566f]' 
-                          : isModelNotFound
-                          ? 'bg-[#8b5cf6]/20 text-[#8b5cf6]'
-                          : 'bg-[#e5566f]/20 text-[#e5566f]'
-                      }`}>
+                      <div className={`p-2.5 rounded-md shrink-0 ${errorTheme.iconBg}`}>
                         {isRateLimit && <AlertTriangle className="w-5 h-5 stroke-[2]" />}
                         {isAuth && <KeyRound className="w-5 h-5 stroke-[2]" />}
                         {isModelNotFound && <Cpu className="w-5 h-5 stroke-[2]" />}
-                        {!isRateLimit && !isAuth && !isModelNotFound && <XCircle className="w-5 h-5 stroke-[2]" />}
+                        {isContextLimit && <Layers className="w-5 h-5 stroke-[2]" />}
+                        {isContentPolicy && <ShieldAlert className="w-5 h-5 stroke-[2]" />}
+                        {isSchemaError && <FileCode2 className="w-5 h-5 stroke-[2]" />}
+                        {!isRateLimit && !isAuth && !isModelNotFound && !isContextLimit && !isContentPolicy && !isSchemaError && <XCircle className="w-5 h-5 stroke-[2]" />}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="font-semibold text-sm sm:text-base text-white">
                             {errorTitle}
                           </h3>
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium ${
-                            isRateLimit 
-                              ? 'bg-[#d9a441]/25 text-[#d9a441] border border-[#d9a441]/40' 
-                              : isAuth 
-                              ? 'bg-[#e5566f]/25 text-[#e5566f] border border-[#e5566f]/40' 
-                              : 'bg-[#e5566f]/25 text-[#e5566f] border border-[#e5566f]/40'
-                          }`}>
-                            {jobData.error_code || (isRateLimit ? 'RATE_LIMIT_429' : 'ERROR')}
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium ${errorTheme.badge}`}>
+                            {jobData.error_code || errorTheme.defaultCode}
                           </span>
                         </div>
                         {jobData.query && (

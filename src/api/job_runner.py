@@ -536,17 +536,23 @@ class ResearchJobService:
 
         except asyncio.CancelledError:
             logger.warning("Research job was cancelled", run_id=run_id)
-            await self.run_manager.update_run_status(
-                run_id=run_id,
-                status="cancelled",
-                error_message="Job execution cancelled by caller.",
-            )
-            await self.run_manager.apply_ttl(run_id)
-            await self.broadcaster.broadcast(
-                run_id=run_id,
-                event="job_failed",
-                data={"status": "cancelled", "error": "Job cancelled."},
-            )
+            try:
+                await self.run_manager.update_run_status(
+                    run_id=run_id,
+                    status="cancelled",
+                    error_message="Job execution cancelled by caller.",
+                )
+                await self.run_manager.apply_ttl(run_id)
+            except Exception as redis_exc:
+                logger.warning("Failed updating Redis during job cancellation", run_id=run_id, error=str(redis_exc))
+            try:
+                await self.broadcaster.broadcast(
+                    run_id=run_id,
+                    event="job_failed",
+                    data={"status": "cancelled", "error": "Job cancelled."},
+                )
+            except Exception as broad_exc:
+                logger.debug("Failed broadcasting cancellation event", error=str(broad_exc))
             raise
 
         except Exception as e:
@@ -559,14 +565,18 @@ class ResearchJobService:
                 suggestion=app_err.suggestion,
                 details=app_err.details,
             )
-            await self.run_manager.update_run_status(
-                run_id=run_id,
-                status="failed",
-                error_message=app_err.message,
-                error_code=app_err.code,
-                error_suggestion=app_err.suggestion,
-                error_details=app_err.details,
-            )
+            try:
+                await self.run_manager.update_run_status(
+                    run_id=run_id,
+                    status="failed",
+                    error_message=app_err.message,
+                    error_code=app_err.code,
+                    error_suggestion=app_err.suggestion,
+                    error_details=app_err.details,
+                )
+            except Exception as redis_exc:
+                logger.warning("Failed updating run status in Redis on failure", run_id=run_id, error=str(redis_exc))
+
             # Assemble failure audit log so /trace endpoint provides diagnostic info
             try:
                 spans = get_run_spans(run_id)
@@ -587,18 +597,25 @@ class ResearchJobService:
             except Exception as audit_exc:
                 logger.debug("Failed saving failure audit log", error=str(audit_exc))
 
-            await self.run_manager.apply_ttl(run_id)
-            await self.broadcaster.broadcast(
-                run_id=run_id,
-                event="job_failed",
-                data={
-                    "status": "failed",
-                    "error": app_err.message,
-                    "code": app_err.code,
-                    "suggestion": app_err.suggestion,
-                    "details": app_err.details,
-                },
-            )
+            try:
+                await self.run_manager.apply_ttl(run_id)
+            except Exception as ttl_exc:
+                logger.debug("Failed applying TTL in Redis on failure", run_id=run_id, error=str(ttl_exc))
+
+            try:
+                await self.broadcaster.broadcast(
+                    run_id=run_id,
+                    event="job_failed",
+                    data={
+                        "status": "failed",
+                        "error": app_err.message,
+                        "code": app_err.code,
+                        "suggestion": app_err.suggestion,
+                        "details": app_err.details,
+                    },
+                )
+            except Exception as broad_exc:
+                logger.warning("Failed broadcasting job_failed event", run_id=run_id, error=str(broad_exc))
 
     async def get_status(self, run_id: str) -> ResearchStatusResponse | None:
         """Fetch current status and report (if completed) for a given run ID."""

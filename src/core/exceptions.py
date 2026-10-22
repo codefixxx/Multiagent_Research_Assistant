@@ -240,6 +240,93 @@ class ToolExecutionError(ApplicationError):
         )
 
 
+class ContextLengthExceededError(ApplicationError):
+    """Raised when the prompt token count exceeds the model's context window limit."""
+
+    def __init__(
+        self,
+        message: str,
+        provider: str | None = None,
+        model_name: str | None = None,
+        code: str = "CONTEXT_LENGTH_EXCEEDED",
+        status_code: int = 400,
+        suggestion: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        d = dict(details or {})
+        if provider:
+            d["provider"] = provider
+        if model_name:
+            d["model_name"] = model_name
+        sugg = (
+            suggestion
+            or f"The prompt exceeds the context window for {model_name or 'the selected model'}. Please choose a model with a larger context window (e.g. Gemini 2.5 Flash with 1M tokens) or reduce search depth."
+        )
+        super().__init__(
+            message=message,
+            code=code,
+            status_code=status_code,
+            suggestion=sugg,
+            details=d,
+        )
+
+
+class ContentModerationError(ApplicationError):
+    """Raised when a request is blocked by provider safety or content moderation policies."""
+
+    def __init__(
+        self,
+        message: str,
+        provider: str | None = None,
+        code: str = "CONTENT_MODERATION_BLOCKED",
+        status_code: int = 400,
+        suggestion: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        d = dict(details or {})
+        if provider:
+            d["provider"] = provider
+        sugg = (
+            suggestion
+            or "The query or retrieved web sources triggered the model provider's safety/content policy. Please rephrase your query or select a model with different content guidelines."
+        )
+        super().__init__(
+            message=message,
+            code=code,
+            status_code=status_code,
+            suggestion=sugg,
+            details=d,
+        )
+
+
+class SchemaValidationError(ApplicationError):
+    """Raised when an LLM fails to generate schema-compliant structured output."""
+
+    def __init__(
+        self,
+        message: str,
+        node: str | None = None,
+        code: str = "SCHEMA_VALIDATION_ERROR",
+        status_code: int = 500,
+        suggestion: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        d = dict(details or {})
+        if node:
+            d["node"] = node
+        sugg = (
+            suggestion
+            or "The model failed structured schema validation. Please select a model with stronger structured reasoning capacity."
+        )
+        super().__init__(
+            message=message,
+            code=code,
+            status_code=status_code,
+            suggestion=sugg,
+            details=d,
+        )
+
+
 class PipelineExecutionError(ApplicationError):
     """Raised when a LangGraph node or state machine execution fails."""
 
@@ -423,7 +510,79 @@ def classify_error(
             details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
         )
 
-    # 5. Tool / Scraper / Search failure
+    # 5. Context Window / Maximum Token Limit Exceeded
+    context_limit_indicators = [
+        "context_length_exceeded",
+        "maximum context length",
+        "context window",
+        "tokens > max",
+        "request payload size exceeds the limit",
+        "prompt is too long",
+        "too many tokens",
+        "string too long",
+        "exceeds the context window",
+        "maximum allowed tokens",
+        "max_tokens limit",
+    ]
+    if any(ind in err_lower for ind in context_limit_indicators):
+        m_display = model_name or "selected model"
+        return ContextLengthExceededError(
+            message=f"Context window exceeded for {prov_title}: Prompt token count is too large.",
+            provider=inferred_provider,
+            model_name=model_name,
+            code="CONTEXT_LENGTH_EXCEEDED",
+            suggestion=f"The research context exceeds {m_display}'s context window. Switch to a higher-capacity model (e.g. Gemini 2.5 Flash with 1M tokens) or reduce search depth.",
+            details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
+        )
+
+    # 6. Content Policy / Safety Moderation Blocked
+    safety_indicators = [
+        "blocked due to safety",
+        "finish_reason: safety",
+        "finish_reason: 2",
+        "blockedprompt",
+        "content_policy_violation",
+        "safety policy",
+        "prompt was flagged",
+        "harm_category",
+        "candidate was blocked",
+        "safety rating",
+    ]
+    if any(ind in err_lower for ind in safety_indicators) or any(
+        t in exc_type_name for t in ("BlockedPromptException", "ContentModerationError")
+    ):
+        return ContentModerationError(
+            message=f"{prov_title} blocked the response due to safety and content moderation policies.",
+            provider=inferred_provider,
+            code="CONTENT_MODERATION_BLOCKED",
+            suggestion="Your research query or retrieved web sources triggered provider safety filters. Try rephrasing your query or choosing a different model.",
+            details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
+        )
+
+    # 7. Schema Validation / Structured Output Parsing Error
+    schema_indicators = [
+        "outputparserexception",
+        "schemavalidationerror",
+        "validationerror",
+        "validation error",
+        "jsondecodeerror",
+        "failed to produce a valid",
+        "schema compliance",
+        "failed structured report schema synthesis",
+        "failed to produce compliant structured output",
+    ]
+    if any(ind in err_lower for ind in schema_indicators) or any(
+        t in exc_type_name for t in ("OutputParserException", "ValidationError", "SchemaValidationError", "JSONDecodeError")
+    ):
+        return SchemaValidationError(
+            message=f"Structured output schema validation failed: {err_str[:200]}",
+            node=node,
+            code="SCHEMA_VALIDATION_ERROR",
+            suggestion="The model failed to produce valid structured JSON. Consider selecting a model with stronger structured reasoning (e.g., Gemini 2.5 Flash or GPT-4o-mini).",
+            details={"original_error": err_str, "exception_type": exc_type_name, "node": node, "model": model_name},
+        )
+
+    # 8. Tool / Scraper / Search failure
     if any(t in exc_type_name.lower() for t in ("tool", "search", "scraper", "httpx")):
         return ToolExecutionError(
             message=f"Research tool execution failed: {err_str}",
@@ -433,7 +592,7 @@ def classify_error(
             details={"original_error": err_str, "exception_type": exc_type_name},
         )
 
-    # 6. Fallback general pipeline error
+    # 9. Fallback general pipeline error
     return PipelineExecutionError(
         message=f"Pipeline execution error: {err_str}",
         node=node,
@@ -441,3 +600,4 @@ def classify_error(
         suggestion="An unexpected error occurred during execution. Please check application logs for details.",
         details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name, "provider": provider},
     )
+

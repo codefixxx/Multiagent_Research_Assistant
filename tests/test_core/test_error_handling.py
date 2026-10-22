@@ -270,3 +270,123 @@ async def test_fastapi_exception_handlers():
         assert d_val_err["code"] == "MODEL_NOT_FOUND"
         assert "bogus_ai" in d_val_err["message"]
         assert d_val_err["suggestion"] is not None
+
+
+def test_classify_error_context_length_exceeded():
+    """Verify classify_error identifies context window and token length exceedance."""
+    from src.core.exceptions import ContextLengthExceededError
+
+    e_groq = Exception("groq.BadRequestError: 400 context_length_exceeded: maximum context length is 8192 tokens. However, your request has 12400 tokens")
+    c_groq = classify_error(e_groq, model_name="llama-3.1-8b-instant")
+    assert isinstance(c_groq, ContextLengthExceededError)
+    assert c_groq.code == "CONTEXT_LENGTH_EXCEEDED"
+    assert c_groq.status_code == 400
+    assert "context window" in c_groq.suggestion.lower()
+
+    e_gemini = Exception("google.api_core.exceptions.InvalidArgument: 400 Request payload size exceeds the limit")
+    c_gemini = classify_error(e_gemini, model_name="gemini-2.5-flash")
+    assert isinstance(c_gemini, ContextLengthExceededError)
+    assert c_gemini.code == "CONTEXT_LENGTH_EXCEEDED"
+
+
+def test_classify_error_content_moderation_safety():
+    """Verify classify_error identifies model provider safety and content moderation blocks."""
+    from src.core.exceptions import ContentModerationError
+
+    e_safety = Exception("ValueError: The Candidate was blocked due to SAFETY. finish_reason: SAFETY")
+    c_safety = classify_error(e_safety, model_name="gemini-2.5-flash")
+    assert isinstance(c_safety, ContentModerationError)
+    assert c_safety.code == "CONTENT_MODERATION_BLOCKED"
+    assert c_safety.status_code == 400
+    assert "safety" in c_safety.suggestion.lower()
+
+    e_openai = Exception("openai.BadRequestError: 400 content_policy_violation: Your request was rejected due to content policy")
+    c_openai = classify_error(e_openai, model_name="gpt-4o")
+    assert isinstance(c_openai, ContentModerationError)
+    assert c_openai.code == "CONTENT_MODERATION_BLOCKED"
+
+
+def test_classify_error_schema_validation():
+    """Verify classify_error identifies structured output schema failures."""
+    from src.core.exceptions import SchemaValidationError
+
+    e_pydantic = Exception("pydantic.ValidationError: 2 validation errors for ResearcherOutput: findings field required")
+    c_pydantic = classify_error(e_pydantic, node="researcher")
+    assert isinstance(c_pydantic, SchemaValidationError)
+    assert c_pydantic.code == "SCHEMA_VALIDATION_ERROR"
+    assert c_pydantic.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_planner_handles_parsed_none_gracefully():
+    """Verify planner specialist agent raises SchemaValidationError when model returns parsed=None."""
+    from langchain_core.runnables import RunnableLambda
+    from tests.conftest import MockChatModel
+    from src.agents.planner import plan_research
+    from src.core.exceptions import SchemaValidationError
+
+    class MalformedChatModel(MockChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            async def _fake_malformed(messages):
+                return {
+                    "raw": "Malformed JSON {broken",
+                    "parsed": None,
+                    "parsing_error": "JSONDecodeError: Expecting value: line 1 column 17",
+                }
+            return RunnableLambda(_fake_malformed)
+
+    with pytest.raises(SchemaValidationError) as excinfo:
+        await plan_research("What is quantum computing?", llm=MalformedChatModel())
+
+    assert excinfo.value.code == "SCHEMA_VALIDATION_ERROR"
+    assert "JSONDecodeError" in excinfo.value.message or "JSONDecodeError" in str(excinfo.value.details)
+    assert excinfo.value.details.get("node") == "planner"
+
+
+@pytest.mark.asyncio
+async def test_job_runner_failure_resilient_to_redis_disconnect(monkeypatch):
+    """Verify job runner completes failure handling and broadcasts event even if Redis is unreachable."""
+    from unittest.mock import AsyncMock
+    from src.api.events import EventBroadcaster
+    from tests.conftest import MockChatModel
+    from src.schemas.api import ResearchRequest
+
+    class CrashingModel(MockChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            from langchain_core.runnables import RunnableLambda
+
+            async def _crash(messages):
+                raise Exception("401 Invalid API Key")
+
+            return RunnableLambda(_crash)
+
+    received_events = []
+
+    class CapturingBroadcaster(EventBroadcaster):
+        async def broadcast(self, run_id, event, data):
+            received_events.append((run_id, event, data))
+
+    broadcaster = CapturingBroadcaster()
+    service = ResearchJobService(event_broadcaster=broadcaster, llm=CrashingModel())
+    await service.initialize()
+
+    # Simulate Redis connection failure on update_run_status
+    import redis.exceptions
+    mock_failing_update = AsyncMock(side_effect=redis.exceptions.ConnectionError("Redis connection lost"))
+    monkeypatch.setattr(service.run_manager, "update_run_status", mock_failing_update)
+
+    run_id = "test-redis-disconnect-run"
+    await service.start_job(run_id=run_id, request=ResearchRequest(query="Testing Redis disconnect"), mode="embedded")
+
+    task = service._active_tasks.get(run_id)
+    if task:
+        await task
+
+    # Assert that despite Redis failure, the broadcaster successfully delivered the job_failed event
+    failed_events = [ev for ev in received_events if ev[1] == "job_failed"]
+    assert len(failed_events) >= 1
+    run_id_ev, evt_name, evt_data = failed_events[0]
+    assert evt_data["status"] == "failed"
+    assert evt_data["code"] == "INVALID_API_KEY"
+
+

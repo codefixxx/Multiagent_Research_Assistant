@@ -4,6 +4,8 @@ Decomposes a broad research query into 2 to 4 atomic, factual, non-overlapping s
 Enforces Pydantic schema validation.
 """
 
+from typing import Any
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -84,8 +86,9 @@ async def plan_research(
         raise classified from exc
 
     # raw_result has keys: 'raw', 'parsed', 'parsing_error'
-    if isinstance(raw_result, dict) and "parsed" in raw_result:
-        parsed_plan: ResearchPlan = raw_result["parsed"]
+    parsed = raw_result.get("parsed") if isinstance(raw_result, dict) else None
+    if isinstance(raw_result, dict) and parsed is not None:
+        parsed_plan: ResearchPlan = parsed
         raw_response = raw_result.get("raw")
         token_usage = extract_token_usage(raw_response)
     elif isinstance(raw_result, ResearchPlan):
@@ -97,13 +100,22 @@ async def plan_research(
             or getattr(model, "model", None)
             or str(model)
         )
-        from src.core.exceptions import ModelProviderError
+        parsing_err = (
+            raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
+        )
+        from src.core.exceptions import SchemaValidationError
 
-        raise ModelProviderError(
-            f"Planner model failed to produce a valid ResearchPlan: {raw_result}",
-            provider=None,
+        err_details: dict[str, Any] = {"model": str(resolved_model)}
+        if parsing_err:
+            err_details["parsing_error"] = str(parsing_err)
+        if isinstance(raw_result, dict) and "raw" in raw_result:
+            err_details["raw_snippet"] = str(raw_result["raw"])[:300]
+
+        raise SchemaValidationError(
+            f"Planner model failed to produce a valid ResearchPlan: {parsing_err or 'Invalid schema returned'}",
+            node="planner",
             suggestion="The model may lack structured output instruction capacity. Please choose a higher capability model (e.g. Gemini 2.5 Flash, GPT-4o-mini).",
-            details={"raw_result": str(raw_result)[:200], "model": str(resolved_model)},
+            details=err_details,
         )
 
     # Enforce strict upper bound on sub-question count if specified

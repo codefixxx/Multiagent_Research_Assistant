@@ -62,13 +62,13 @@ def validate_model_configuration(
         )
 
     # Check key requirements
-    if target_provider == "gemini" and not (api_key or settings.GEMINI_API_KEY or settings.GROQ_API_KEY):
+    if target_provider == "gemini" and not (api_key or settings.GEMINI_API_KEY):
         raise AuthenticationError(
             "GEMINI_API_KEY is not configured.",
             provider="gemini",
             suggestion="Please provide a Gemini API key in Settings or set GEMINI_API_KEY in .env.",
         )
-    if target_provider == "groq" and not (api_key or settings.GROQ_API_KEY or settings.GEMINI_API_KEY):
+    if target_provider == "groq" and not (api_key or settings.GROQ_API_KEY):
         raise AuthenticationError(
             "GROQ_API_KEY is not configured.",
             provider="groq",
@@ -171,31 +171,23 @@ def get_chat_model(
     if target_provider == "gemini":
         active_key = api_key or settings.GEMINI_API_KEY
         if not active_key:
-            if settings.GROQ_API_KEY:
-                logger.warning(
-                    "GEMINI_API_KEY not found; falling back to Groq provider",
-                    requested=target_provider,
-                    fallback="groq",
-                )
-                target_provider = "groq"
-            else:
-                raise LLMConfigurationError(
-                    "GEMINI_API_KEY is not configured. "
-                    "Please provide an API key in Settings or set GEMINI_API_KEY in .env."
-                )
-        else:
-            active_model = model_name or settings.LLM_MODEL or settings.GEMINI_MODEL
-            if active_model.startswith("models/"):
-                active_model = active_model.replace("models/", "")
-            logger.info("Initializing Gemini Chat Model", provider="gemini", model=active_model)
-            return ChatGoogleGenerativeAI(
-                google_api_key=active_key,
-                model=active_model,
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                timeout=60.0,
-                max_retries=3,
+            raise AuthenticationError(
+                "GEMINI_API_KEY is not configured.",
+                provider="gemini",
+                suggestion="Please provide a Gemini API key in Settings or set GEMINI_API_KEY in .env.",
             )
+        active_model = model_name or settings.LLM_MODEL or settings.GEMINI_MODEL
+        if active_model.startswith("models/"):
+            active_model = active_model.replace("models/", "")
+        logger.info("Initializing Gemini Chat Model", provider="gemini", model=active_model)
+        return ChatGoogleGenerativeAI(
+            google_api_key=active_key,
+            model=active_model,
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+            timeout=60.0,
+            max_retries=3,
+        )
 
     if target_provider == "openai":
         active_key = api_key or settings.OPENAI_API_KEY

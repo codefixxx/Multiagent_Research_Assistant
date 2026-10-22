@@ -4,6 +4,8 @@ Evaluates researcher findings against sub-question requirements to determine
 whether a single revision pass is justified or if work is approved.
 """
 
+from typing import Any
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -100,8 +102,9 @@ async def evaluate_research(
         )
         raise classified from exc
 
-    if isinstance(raw_result, dict) and "parsed" in raw_result:
-        evaluation: ReviewEvaluation = raw_result["parsed"]
+    parsed = raw_result.get("parsed") if isinstance(raw_result, dict) else None
+    if isinstance(raw_result, dict) and parsed is not None:
+        evaluation: ReviewEvaluation = parsed
         raw_response = raw_result.get("raw")
         token_usage = extract_token_usage(raw_response)
     elif isinstance(raw_result, ReviewEvaluation):
@@ -113,13 +116,25 @@ async def evaluate_research(
             or getattr(model, "model", None)
             or str(model)
         )
-        from src.core.exceptions import ModelProviderError
+        parsing_err = (
+            raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
+        )
+        from src.core.exceptions import SchemaValidationError
 
-        raise ModelProviderError(
-            f"Reviewer model failed to produce a valid ReviewEvaluation: {raw_result}",
-            provider=None,
+        err_details: dict[str, Any] = {
+            "sub_question_id": sub_question.id,
+            "model": str(resolved_model),
+        }
+        if parsing_err:
+            err_details["parsing_error"] = str(parsing_err)
+        if isinstance(raw_result, dict) and "raw" in raw_result:
+            err_details["raw_snippet"] = str(raw_result["raw"])[:300]
+
+        raise SchemaValidationError(
+            f"Reviewer model failed to produce valid review evaluation schema: {parsing_err or 'Invalid output returned'}",
+            node="reviewer",
             suggestion="The model failed to generate compliant review evaluation structured output.",
-            details={"raw_result": str(raw_result)[:200], "model": str(resolved_model)},
+            details=err_details,
         )
 
     logger.info(

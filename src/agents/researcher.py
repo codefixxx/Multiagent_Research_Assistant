@@ -4,6 +4,8 @@ Investigates an individual sub-question using search context and extracts factua
 with complete source URL, snippet, and timestamp provenance.
 """
 
+from typing import Any
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.prompts import ChatPromptTemplate
 
@@ -89,8 +91,9 @@ async def research_subquestion(
         )
         raise classified from exc
 
-    if isinstance(raw_result, dict) and "parsed" in raw_result:
-        output: ResearcherOutput = raw_result["parsed"]
+    parsed = raw_result.get("parsed") if isinstance(raw_result, dict) else None
+    if isinstance(raw_result, dict) and parsed is not None:
+        output: ResearcherOutput = parsed
         raw_response = raw_result.get("raw")
         token_usage = extract_token_usage(raw_response)
     elif isinstance(raw_result, ResearcherOutput):
@@ -102,13 +105,25 @@ async def research_subquestion(
             or getattr(model, "model", None)
             or str(model)
         )
-        from src.core.exceptions import ModelProviderError
+        parsing_err = (
+            raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
+        )
+        from src.core.exceptions import SchemaValidationError
 
-        raise ModelProviderError(
-            f"Researcher model failed to produce a valid ResearcherOutput: {raw_result}",
-            provider=None,
+        err_details: dict[str, Any] = {
+            "sub_question_id": sub_question.id,
+            "model": str(resolved_model),
+        }
+        if parsing_err:
+            err_details["parsing_error"] = str(parsing_err)
+        if isinstance(raw_result, dict) and "raw" in raw_result:
+            err_details["raw_snippet"] = str(raw_result["raw"])[:300]
+
+        raise SchemaValidationError(
+            f"Researcher model failed to produce valid findings schema: {parsing_err or 'Invalid output returned'}",
+            node="researcher",
             suggestion="The model failed schema compliance for researcher findings. Consider selecting a model with stronger tool-use capacity.",
-            details={"raw_result": str(raw_result)[:200], "model": str(resolved_model)},
+            details=err_details,
         )
 
     # Ensure findings are tied to the sub-question id

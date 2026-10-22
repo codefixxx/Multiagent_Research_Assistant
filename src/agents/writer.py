@@ -5,6 +5,7 @@ with validated citations and an executive summary.
 """
 
 import re
+from typing import Any
 import urllib.parse
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -126,8 +127,9 @@ async def write_report(
         )
         raise classified from exc
 
-    if isinstance(raw_result, dict) and "parsed" in raw_result:
-        report: ResearchReport = raw_result["parsed"]
+    parsed = raw_result.get("parsed") if isinstance(raw_result, dict) else None
+    if isinstance(raw_result, dict) and parsed is not None:
+        report: ResearchReport = parsed
         raw_response = raw_result.get("raw")
         token_usage = extract_token_usage(raw_response)
     elif isinstance(raw_result, ResearchReport):
@@ -139,13 +141,22 @@ async def write_report(
             or getattr(model, "model", None)
             or str(model)
         )
-        from src.core.exceptions import ModelProviderError
+        parsing_err = (
+            raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
+        )
+        from src.core.exceptions import SchemaValidationError
 
-        raise ModelProviderError(
-            f"Writer model failed to produce a valid ResearchReport: {raw_result}",
-            provider=None,
+        err_details: dict[str, Any] = {"model": str(resolved_model)}
+        if parsing_err:
+            err_details["parsing_error"] = str(parsing_err)
+        if isinstance(raw_result, dict) and "raw" in raw_result:
+            err_details["raw_snippet"] = str(raw_result["raw"])[:300]
+
+        raise SchemaValidationError(
+            f"Writer model failed structured report schema synthesis: {parsing_err or 'Invalid schema returned'}",
+            node="writer",
             suggestion="The writer model failed structured report schema synthesis. Please select a model with strong long-context instruction following.",
-            details={"raw_result": str(raw_result)[:200], "model": str(resolved_model)},
+            details=err_details,
         )
 
     # --- DETERMINISTIC CITATION RECONCILIATION & BINDING ---
