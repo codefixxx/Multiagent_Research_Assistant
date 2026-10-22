@@ -12,7 +12,8 @@ import {
   XCircle, 
   Loader2,
   Sparkles,
-  Layers
+  Layers,
+  Ban
 } from 'lucide-react';
 
 interface HistoryDrawerProps {
@@ -224,7 +225,13 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                         <span>Failed</span>
                       </span>
                     )}
-                    {run.status !== 'completed' && run.status !== 'budget_exceeded' && run.status !== 'failed' && (
+                    {run.status === 'cancelled' && (
+                      <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#8a8c92]/15 text-[#8a8c92] border border-[#8a8c92]/30">
+                        <Ban className="w-3 h-3" />
+                        <span>Cancelled</span>
+                      </span>
+                    )}
+                    {run.status !== 'completed' && run.status !== 'budget_exceeded' && run.status !== 'failed' && run.status !== 'cancelled' && (
                       <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#4a8ad6]/15 text-[#4a8ad6] border border-[#4a8ad6]/30">
                         <Loader2 className="w-3 h-3 animate-spin" />
                         <span className="capitalize">{run.status || 'Active'}</span>
@@ -249,9 +256,16 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                 </div>
 
                 {/* Query Title */}
-                <h4 className="text-xs font-medium text-white mb-2 leading-relaxed line-clamp-2">
+                <h4 className="text-xs font-medium text-white mb-1.5 leading-relaxed line-clamp-2">
                   {run.query}
                 </h4>
+
+                {/* Optional Cancellation or Error Reason */}
+                {run.error_message && (
+                  <p className="text-[11px] text-[#8a8c92] bg-[#131217] px-2 py-1 rounded border border-[#222224] mb-2 line-clamp-1" title={run.error_message}>
+                    <span className="text-[#6a6c72]">Note:</span> {run.error_message}
+                  </p>
+                )}
 
                 {/* Metrics Badges */}
                 <div className="flex flex-wrap items-center gap-2 text-[11px] text-[#8a8c92] mb-3">
