@@ -160,3 +160,78 @@ async def test_multi_search_client_fallback(monkeypatch):
     assert len(results) == 1
     assert results[0].engine == "duckduckgo"
     assert status == ExtractionStatus.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_focus_mode_domain_biasing(monkeypatch):
+    # Test 1: Tavily domain inclusion
+    captured_payload = {}
+
+    class MockResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "results": [
+                    {
+                        "title": "arXiv: Attention Is All You Need",
+                        "url": "https://arxiv.org/abs/1706.03762",
+                        "content": "Empirical Transformer research paper.",
+                        "score": 0.99,
+                    }
+                ]
+            }
+
+    class MockAsyncClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, url, json):
+            nonlocal captured_payload
+            captured_payload = json
+            return MockResponse()
+
+    monkeypatch.setattr(httpx, "AsyncClient", MockAsyncClient)
+
+    tavily_client = TavilySearchClient(api_key="mock-key")
+    academic_results = await tavily_client.search("Transformers", focus_mode="academic")
+    assert len(academic_results) == 1
+    assert "arxiv.org" in captured_payload.get("include_domains", [])
+
+    # Test 2: DuckDuckGo effective query enrichment
+    captured_ddg_query = None
+
+    class FakeDDGS:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def text(self, query, max_results=5):
+            nonlocal captured_ddg_query
+            captured_ddg_query = query
+            return [{"title": "Tech Docs", "href": "https://github.com", "body": "Specs"}]
+
+    try:
+        monkeypatch.setattr("ddgs.DDGS", FakeDDGS)
+    except Exception:
+        pass
+    try:
+        monkeypatch.setattr("duckduckgo_search.DDGS", FakeDDGS)
+    except Exception:
+        pass
+
+    ddg_client = DuckDuckGoSearchClient()
+    await ddg_client.search("LangGraph internals", focus_mode="technical")
+    assert captured_ddg_query is not None
+    assert "site:github.com" in captured_ddg_query or "architecture" in captured_ddg_query

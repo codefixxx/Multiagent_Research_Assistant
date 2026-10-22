@@ -197,7 +197,7 @@ class RedisRunManager:
     def _steps_key(self, run_id: str) -> str:
         return f"research:run:{run_id}:steps"
 
-    async def init_run(self, run_id: str, query: str) -> dict[str, Any]:
+    async def init_run(self, run_id: str, query: str, focus_mode: str = "general") -> dict[str, Any]:
         """Initialize metadata for a new research run."""
         now = datetime.now(UTC).isoformat()
         metadata = {
@@ -207,6 +207,7 @@ class RedisRunManager:
             "current_node": "planner",
             "step_count": 0,
             "total_tokens": 0,
+            "focus_mode": focus_mode,
             "created_at": now,
             "updated_at": now,
             "error_message": None,

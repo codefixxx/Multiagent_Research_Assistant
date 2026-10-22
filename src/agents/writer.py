@@ -77,10 +77,34 @@ def format_findings_for_writer(findings: list[FindingRecord]) -> str:
     return "\n".join(lines)
 
 
+FOCUS_MODE_WRITER_GUIDES: dict[str, str] = {
+    "academic": (
+        "\nSTYLE AND STRUCTURE REQUIREMENT: ACADEMIC & SCIENTIFIC DOSSIER\n"
+        "- Structure with a formal Abstract/Executive Summary, Methodology Review, Core Empirical Evidence, and Limitations.\n"
+        "- Maintain an objective, peer-reviewed scientific tone with formal inline citation markers [cite_X].\n"
+    ),
+    "technical": (
+        "\nSTYLE AND STRUCTURE REQUIREMENT: TECHNICAL RFC & ENGINEERING WHITEPAPER\n"
+        "- Structure with Architecture Overview, Component Breakdown, Performance & Benchmark Specifications, and Production Tradeoffs.\n"
+        "- Include code/config references and implementation caveats with inline citations [cite_X].\n"
+    ),
+    "financial": (
+        "\nSTYLE AND STRUCTURE REQUIREMENT: INSTITUTIONAL MARKET & FINANCIAL DOSSIER\n"
+        "- Structure with Executive Investment Thesis, Financial Metrics & Earnings Breakdown, Industry Competitive Dynamics, and Risk Factors.\n"
+        "- Emphasize exact figures, percentages, revenues, and filing disclosures with inline citations [cite_X].\n"
+    ),
+    "general": (
+        "\nSTYLE AND STRUCTURE REQUIREMENT: COMPREHENSIVE EXECUTIVE BRIEFING\n"
+        "- Structure logically with clear hierarchical sections, key takeaways, and inline citations [cite_X].\n"
+    ),
+}
+
+
 async def write_report(
     query: str,
     findings: list[FindingRecord],
     llm: BaseChatModel | None = None,
+    focus_mode: str = "general",
 ) -> tuple[ResearchReport, TokenUsage, float]:
     """Execute the writer specialist in isolation against gathered findings.
 
@@ -88,6 +112,7 @@ async def write_report(
         query: The overarching research query.
         findings: The list of accumulated FindingRecord objects.
         llm: Optional chat model instance.
+        focus_mode: Optional domain focus mode ('general', 'academic', 'technical', 'financial').
 
     Returns:
         Tuple of (ResearchReport, TokenUsage, latency_ms).
@@ -95,9 +120,13 @@ async def write_report(
     model = llm or get_chat_model()
     structured_llm = model.with_structured_output(ResearchReport, include_raw=True)
 
+    system_prompt = WRITER_SYSTEM_PROMPT
+    if focus_mode:
+        system_prompt += FOCUS_MODE_WRITER_GUIDES.get(focus_mode, "")
+
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", WRITER_SYSTEM_PROMPT),
+            ("system", system_prompt),
             ("human", WRITER_HUMAN_PROMPT),
         ]
     )

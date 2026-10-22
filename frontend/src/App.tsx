@@ -58,7 +58,8 @@ export function App() {
     query: string,
     subQuestionsCount: number,
     timeLimitSec: number,
-    deepScrape: boolean
+    deepScrape: boolean,
+    focusMode: string = 'general'
   ) => {
     dispatchInvestigation(
       query,
@@ -66,7 +67,8 @@ export function App() {
       timeLimitSec,
       deepScrape,
       activeModelMatrix,
-      activeApiKeys
+      activeApiKeys,
+      focusMode
     );
   };
 

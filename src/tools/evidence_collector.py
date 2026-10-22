@@ -66,6 +66,7 @@ class EvidenceCollector:
         max_results_per_query: int | None = None,
         deep_scrape: bool = True,
         max_pages_to_scrape: int = 5,
+        focus_mode: str = "general",
     ) -> EvidenceCollectionResult:
         """Execute searches across queries, scrape allowed URLs, and assemble provenance context."""
         limit = max_results_per_query or settings.SEARCH_MAX_RESULTS_PER_QUERY
@@ -75,7 +76,7 @@ class EvidenceCollector:
 
         # 1. Execute searches across all provided queries concurrently
         async def _search_query(q: str) -> tuple[list[SearchResult], ExtractionStatus]:
-            res = await self.search_client.search(q, max_results=limit)
+            res = await self.search_client.search(q, max_results=limit, focus_mode=focus_mode)
             if isinstance(res, tuple):
                 return res
             return res, (ExtractionStatus.SUCCESS if res else ExtractionStatus.NO_RESULTS)

@@ -96,6 +96,7 @@ async def list_research_history(
                 run_id=r.get("run_id", ""),
                 query=r.get("query", ""),
                 status=r.get("status", "planning"),
+                focus_mode=r.get("focus_mode", "general"),
                 created_at=r.get("created_at"),
                 updated_at=r.get("updated_at"),
                 step_count=r.get("step_count", 0),

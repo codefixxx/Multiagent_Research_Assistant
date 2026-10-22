@@ -111,6 +111,7 @@ export interface ResearchJobData {
   run_id: string;
   status: JobStatus;
   query: string;
+  focus_mode?: string;
   report?: ResearchReport | null;
   cost_summary?: RunCostSummary | null;
   rag_score?: RAGScore | null;
@@ -136,6 +137,7 @@ export interface ResearchHistoryItem {
   run_id: string;
   query: string;
   status: JobStatus | string;
+  focus_mode?: string;
   created_at?: string;
   updated_at?: string;
   step_count?: number;

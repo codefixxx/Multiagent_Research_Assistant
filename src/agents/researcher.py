@@ -28,11 +28,19 @@ STRICT OPERATIONAL RULES:
 6. Output must strictly conform to the ResearcherOutput schema.
 """
 
+FOCUS_MODE_RESEARCHER_GUIDES: dict[str, str] = {
+    "academic": "DOMAIN EMPHASIS: Extract empirical claims, statistical confidence levels, research methodologies, and direct quotes with precise source attribution.",
+    "technical": "DOMAIN EMPHASIS: Extract code mechanisms, API contracts, latency/throughput figures, and architectural limitations.",
+    "financial": "DOMAIN EMPHASIS: Extract financial figures, percentages, revenues, margins, growth rates, dates, and regulatory filings context.",
+    "general": "DOMAIN EMPHASIS: Extract clear factual claims and direct statements supported by verified sources.",
+}
+
 RESEARCHER_HUMAN_PROMPT = """Investigate the following sub-question based on the evidence provided:
 
 Sub-Question ID: {sub_question_id}
 Sub-Question: {question}
 Rationale: {rationale}
+{domain_guidance}
 
 Search & Source Evidence Context:
 {evidence_context}
@@ -43,6 +51,7 @@ async def research_subquestion(
     sub_question: SubQuestion,
     evidence_context: str,
     llm: BaseChatModel | None = None,
+    focus_mode: str = "general",
 ) -> tuple[ResearcherOutput, TokenUsage, float]:
     """Execute the researcher specialist in isolation against provided evidence context.
 
@@ -50,6 +59,7 @@ async def research_subquestion(
         sub_question: The SubQuestion model to research.
         evidence_context: String containing raw scraped documents, snippets, and source URLs.
         llm: Optional chat model instance.
+        focus_mode: Optional domain focus mode ('general', 'academic', 'technical', 'financial').
 
     Returns:
         Tuple of (ResearcherOutput, TokenUsage, latency_ms).
@@ -64,10 +74,13 @@ async def research_subquestion(
         ]
     )
 
+    domain_guidance = FOCUS_MODE_RESEARCHER_GUIDES.get(focus_mode, "")
+
     formatted_messages = prompt.format_messages(
         sub_question_id=sub_question.id,
         question=sub_question.question,
         rationale=sub_question.rationale,
+        domain_guidance=domain_guidance,
         evidence_context=evidence_context or "No search results returned for this query.",
     )
 

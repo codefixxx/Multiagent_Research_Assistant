@@ -7,7 +7,8 @@ interface CommandDeckProps {
     query: string,
     subQuestionsCount: number,
     timeLimitSec: number,
-    deepScrape: boolean
+    deepScrape: boolean,
+    focusMode: string
   ) => void;
 }
 
@@ -25,11 +26,12 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
   const [depth, setDepth] = useState(2);
   const [timeLimit, setTimeLimit] = useState(120);
   const [deepScrape, setDeepScrape] = useState(true);
+  const [focusMode, setFocusMode] = useState('general');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim() || isDispatching) return;
-    onDispatch(query.trim(), depth, timeLimit, deepScrape);
+    onDispatch(query.trim(), depth, timeLimit, deepScrape, focusMode);
   };
 
   return (
@@ -73,6 +75,22 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-3 text-[13px] text-[#8a8c92]">
           {/* Controls */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Focus Mode Selector */}
+            <div className="flex items-center space-x-1.5 bg-[#131217] border border-[#222224] rounded-md px-3 py-1.5">
+              <span className="text-[#8a8c92]">Focus:</span>
+              <select
+                value={focusMode}
+                onChange={(e) => setFocusMode(e.target.value)}
+                disabled={isDispatching}
+                className="bg-transparent text-white font-medium text-[13px] focus:outline-none cursor-pointer"
+              >
+                <option value="general" className="bg-[#131217] text-white">🌐 General Web</option>
+                <option value="academic" className="bg-[#131217] text-white">🎓 Academic & Scientific</option>
+                <option value="technical" className="bg-[#131217] text-white">⚡ Technical & Engineering</option>
+                <option value="financial" className="bg-[#131217] text-white">📈 Financial & Market</option>
+              </select>
+            </div>
+
             {/* Depth Selector */}
             <div className="flex items-center space-x-1.5 bg-[#131217] border border-[#222224] rounded-md px-3 py-1.5">
               <span className="text-[#8a8c92]">Depth:</span>

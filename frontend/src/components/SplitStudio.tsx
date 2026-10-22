@@ -396,6 +396,13 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                   <span>Ready</span>
                 </span>
               )}
+              {jobData?.focus_mode && jobData.focus_mode !== 'general' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#8a5cf6]/15 text-[#a78bfa] border border-[#8a5cf6]/30">
+                  {jobData.focus_mode === 'academic' && '🎓 Academic'}
+                  {jobData.focus_mode === 'technical' && '⚡ Technical'}
+                  {jobData.focus_mode === 'financial' && '📈 Financial'}
+                </span>
+              )}
             </div>
 
             {/* Actions */}

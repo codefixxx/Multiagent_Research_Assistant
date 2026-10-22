@@ -1,5 +1,6 @@
 """Production Search Tool with Tavily API primary and DuckDuckGo fallback."""
 
+import inspect
 import asyncio
 from abc import ABC, abstractmethod
 from typing import Any
@@ -27,11 +28,72 @@ class SearchResult(BaseModel):
     )
 
 
+async def _safe_client_search(
+    client: Any,
+    query: str,
+    max_results: int = 5,
+    focus_mode: str = "general",
+) -> list[SearchResult]:
+    """Call client.search passing focus_mode if supported, falling back gracefully for custom mocks."""
+    try:
+        sig = inspect.signature(client.search)
+        if "focus_mode" in sig.parameters or any(
+            p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        ):
+            return await client.search(query, max_results=max_results, focus_mode=focus_mode)
+        return await client.search(query, max_results=max_results)
+    except TypeError:
+        return await client.search(query, max_results=max_results)
+
+
+FOCUS_DOMAINS: dict[str, list[str]] = {
+    "academic": [
+        "arxiv.org",
+        "biorxiv.org",
+        "medrxiv.org",
+        "nih.gov",
+        "nature.com",
+        "sciencedirect.com",
+        "ieee.org",
+        "semanticscholar.org",
+        "acm.org",
+        "pnas.org",
+    ],
+    "technical": [
+        "github.com",
+        "stackoverflow.com",
+        "dev.to",
+        "docs.python.org",
+        "developer.mozilla.org",
+        "kubernetes.io",
+        "medium.com",
+        "rust-lang.org",
+        "golang.org",
+    ],
+    "financial": [
+        "sec.gov",
+        "bloomberg.com",
+        "reuters.com",
+        "marketwatch.com",
+        "wsj.com",
+        "ft.com",
+        "investing.com",
+        "cnbc.com",
+        "fool.com",
+    ],
+}
+
+
 class BaseSearchEngine(ABC):
     """Abstract interface for web search engine clients."""
 
     @abstractmethod
-    async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+    async def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        focus_mode: str = "general",
+    ) -> list[SearchResult]:
         """Execute web search query asynchronously."""
         ...
 
@@ -45,7 +107,12 @@ class TavilySearchClient(BaseSearchEngine):
         self.api_key = api_key or settings.TAVILY_API_KEY
         self.timeout = timeout
 
-    async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+    async def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        focus_mode: str = "general",
+    ) -> list[SearchResult]:
         if not self.api_key:
             raise SearchError("Tavily API key is not configured.", status=ExtractionStatus.ERROR)
 
@@ -56,6 +123,8 @@ class TavilySearchClient(BaseSearchEngine):
             "search_depth": "basic",
             "include_raw_content": False,
         }
+        if focus_mode in FOCUS_DOMAINS:
+            payload["include_domains"] = FOCUS_DOMAINS[focus_mode]
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -107,16 +176,29 @@ class DuckDuckGoSearchClient(BaseSearchEngine):
     def __init__(self, timeout: float = 10.0) -> None:
         self.timeout = timeout
 
-    async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+    async def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        focus_mode: str = "general",
+    ) -> list[SearchResult]:
         try:
             try:
                 from ddgs import DDGS
             except ImportError:
                 from duckduckgo_search import DDGS  # type: ignore[no-redef]
 
+            effective_query = query
+            if focus_mode == "academic":
+                effective_query = f"{query} (site:arxiv.org OR site:nih.gov OR research OR paper OR methodology)"
+            elif focus_mode == "technical":
+                effective_query = f"{query} (site:github.com OR documentation OR architecture OR benchmark)"
+            elif focus_mode == "financial":
+                effective_query = f"{query} (site:sec.gov OR earnings OR financial results OR revenue OR 10-K)"
+
             def _sync_ddg_search() -> list[dict[str, Any]]:
                 with DDGS(timeout=int(self.timeout)) as ddgs:
-                    return list(ddgs.text(query, max_results=max_results))
+                    return list(ddgs.text(effective_query, max_results=max_results))
 
             raw_results = await asyncio.to_thread(_sync_ddg_search)
 
@@ -132,7 +214,7 @@ class DuckDuckGoSearchClient(BaseSearchEngine):
                     )
                 )
 
-            logger.info("DuckDuckGo search completed", query=query, results_count=len(results))
+            logger.info("DuckDuckGo search completed", query=effective_query, focus_mode=focus_mode, results_count=len(results))
             return results
 
         except Exception as e:
@@ -150,16 +232,21 @@ class MockSearchClient(BaseSearchEngine):
     def __init__(self, predefined_results: list[SearchResult] | None = None) -> None:
         self.predefined_results = predefined_results
 
-    async def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+    async def search(
+        self,
+        query: str,
+        max_results: int = 5,
+        focus_mode: str = "general",
+    ) -> list[SearchResult]:
         if self.predefined_results is not None:
             return self.predefined_results[:max_results]
 
         # Generate realistic synthetic results
         results = [
             SearchResult(
-                title=f"Technical Overview: {query}",
+                title=f"Technical Overview ({focus_mode}): {query}",
                 url=f"https://example.com/research/{abs(hash(query)) % 1000}",
-                snippet=f"Detailed analysis regarding '{query}'. Key benchmarks demonstrate low latency and high reliability.",
+                snippet=f"Detailed analysis regarding '{query}' in {focus_mode} focus mode. Key benchmarks demonstrate low latency and high reliability.",
                 score=0.95,
                 engine="mock",
             ),
@@ -191,6 +278,7 @@ class MultiSearchClient:
         self,
         query: str,
         max_results: int = 5,
+        focus_mode: str = "general",
     ) -> tuple[list[SearchResult], ExtractionStatus]:
         """Execute a search with automatic provider fallback.
 
@@ -199,7 +287,7 @@ class MultiSearchClient:
         """
         # 0. Injected mock client takes absolute priority (for test isolation)
         if self.mock is not None:
-            results = await self.mock.search(query, max_results=max_results)
+            results = await _safe_client_search(self.mock, query, max_results=max_results, focus_mode=focus_mode)
             status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
             return results, status
 
@@ -207,14 +295,14 @@ class MultiSearchClient:
 
         # 1. Force Mock Mode if configured in settings
         if mode == "mock" or settings.LLM_PROVIDER == "mock":
-            results = await MockSearchClient().search(query, max_results=max_results)
+            results = await _safe_client_search(MockSearchClient(), query, max_results=max_results, focus_mode=focus_mode)
             status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
             return results, status
 
         # 2. Force DuckDuckGo if requested
         if mode == "duckduckgo":
             try:
-                results = await self.ddg.search(query, max_results=max_results)
+                results = await _safe_client_search(self.ddg, query, max_results=max_results, focus_mode=focus_mode)
                 status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
                 return results, status
             except SearchError as e:
@@ -226,7 +314,7 @@ class MultiSearchClient:
         # 3. Force Tavily if requested
         if mode == "tavily":
             try:
-                results = await self.tavily.search(query, max_results=max_results)
+                results = await _safe_client_search(self.tavily, query, max_results=max_results, focus_mode=focus_mode)
                 status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
                 return results, status
             except SearchError as e:
@@ -236,7 +324,7 @@ class MultiSearchClient:
         # 4. Auto mode: Try Tavily first if key is provided, fallback to DuckDuckGo
         if settings.TAVILY_API_KEY:
             try:
-                results = await self.tavily.search(query, max_results=max_results)
+                results = await _safe_client_search(self.tavily, query, max_results=max_results, focus_mode=focus_mode)
                 if results:
                     return results, ExtractionStatus.SUCCESS
             except SearchError as e:
@@ -248,7 +336,7 @@ class MultiSearchClient:
 
         # Fallback to DuckDuckGo
         try:
-            results = await self.ddg.search(query, max_results=max_results)
+            results = await _safe_client_search(self.ddg, query, max_results=max_results, focus_mode=focus_mode)
             status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
             return results, status
         except SearchError as e:

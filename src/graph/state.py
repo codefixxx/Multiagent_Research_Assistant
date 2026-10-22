@@ -82,6 +82,7 @@ class ResearchState(TypedDict, total=False):
     max_wall_clock_seconds: float | None
     max_tokens: int | None
     deep_scrape: bool | None
+    focus_mode: str | None
 
     # Error handling
     error_message: str | None

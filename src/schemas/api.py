@@ -62,6 +62,10 @@ class ResearchRequest(BaseModel):
         default=True,
         description="Whether to perform deep HTML page scraping and provenance extraction.",
     )
+    focus_mode: str = Field(
+        default="general",
+        description="Domain focus mode: 'general', 'academic' (scholarly literature/arXiv), 'technical' (architecture/code/benchmarks), or 'financial' (SEC filings/earnings/market).",
+    )
     model_matrix: ModelMatrixConfig | None = Field(
         default=None,
         description="Optional custom model assignments per agent role.",
@@ -106,6 +110,7 @@ class ResearchStatusResponse(BaseModel):
     citation_validation: CitationValidationResult | None = None
     cost_summary: RunCostSummary | None = None
     rag_score: RAGQualityScore | None = None
+    focus_mode: str | None = Field(default="general", description="Focus mode configured for the run.")
     error_message: str | None = None
     error_code: str | None = None
     error_suggestion: str | None = None
@@ -120,6 +125,7 @@ class ResearchHistoryItem(BaseModel):
     run_id: str
     query: str
     status: str
+    focus_mode: str | None = Field(default="general", description="Focus mode configured for the run.")
     created_at: str | None = None
     updated_at: str | None = None
     step_count: int = 0

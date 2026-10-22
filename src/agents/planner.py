@@ -27,6 +27,28 @@ STRICT OPERATIONAL RULES:
 6. You must return your output strictly matching the provided ResearchPlan schema.
 """
 
+FOCUS_MODE_PLANNER_GUIDES: dict[str, str] = {
+    "academic": (
+        "\nRESEARCH DOMAIN: ACADEMIC & SCIENTIFIC.\n"
+        "- Prioritize theoretical formulations, peer-reviewed methodology, empirical datasets, and scientific rigor.\n"
+        "- Generate search queries optimized for arXiv, PubMed, IEEE, Semantic Scholar, and scholarly repositories.\n"
+    ),
+    "technical": (
+        "\nRESEARCH DOMAIN: TECHNICAL & ENGINEERING ARCHITECTURE.\n"
+        "- Prioritize implementation specifications, code architectures, throughput/latency benchmarks, and operational tradeoffs.\n"
+        "- Generate search queries targeting official docs, GitHub repositories, RFCs, and engineering post-mortems.\n"
+    ),
+    "financial": (
+        "\nRESEARCH DOMAIN: FINANCIAL & MARKET ANALYSIS.\n"
+        "- Prioritize financial balance sheet metrics, revenue CAGR, EBITDA margins, valuation multiples, and SEC filings (10-K, 10-Q).\n"
+        "- Generate search queries targeting SEC filings, earnings call transcripts, Bloomberg, Reuters, and market data.\n"
+    ),
+    "general": (
+        "\nRESEARCH DOMAIN: GENERAL COMPREHENSIVE INVESTIGATION.\n"
+        "- Decompose broadly across historical context, current state, key players, and verifiable web evidence.\n"
+    ),
+}
+
 PLANNER_HUMAN_PROMPT = """Decompose this research query into a structured research plan:
 Research Query: {query}
 """
@@ -36,6 +58,7 @@ async def plan_research(
     query: str,
     llm: BaseChatModel | None = None,
     max_sub_questions: int | None = None,
+    focus_mode: str = "general",
 ) -> tuple[ResearchPlan, TokenUsage, float]:
     """Execute the planner specialist in isolation.
 
@@ -43,6 +66,7 @@ async def plan_research(
         query: The user's research query.
         llm: Optional chat model instance. If None, default model is instantiated.
         max_sub_questions: Optional maximum number of sub-questions to generate.
+        focus_mode: Optional domain focus mode ('general', 'academic', 'technical', 'financial').
 
     Returns:
         Tuple of (ResearchPlan, TokenUsage, latency_ms).
@@ -51,6 +75,9 @@ async def plan_research(
     structured_llm = model.with_structured_output(ResearchPlan, include_raw=True)
 
     human_content = PLANNER_HUMAN_PROMPT.format(query=query)
+    if focus_mode:
+        human_content += FOCUS_MODE_PLANNER_GUIDES.get(focus_mode, "")
+
     if max_sub_questions and max_sub_questions > 0:
         human_content += (
             f"\nCRITICAL CONSTRAINT: You must generate EXACTLY {max_sub_questions} sub-questions "

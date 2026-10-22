@@ -103,7 +103,11 @@ class ResearchJobService:
 
         assert self.run_manager is not None
         # Initialize run metadata in Redis
-        await self.run_manager.init_run(run_id=run_id, query=request.query)
+        await self.run_manager.init_run(
+            run_id=run_id,
+            query=request.query,
+            focus_mode=request.focus_mode,
+        )
 
         effective_mode = mode or settings.WORKER_MODE
 
@@ -240,6 +244,7 @@ class ResearchJobService:
                 max_wall_clock_seconds=request.max_wall_clock_seconds,
                 max_tokens=request.max_tokens,
                 deep_scrape=request.deep_scrape,
+                focus_mode=request.focus_mode,
             )
             config: RunnableConfig = {"configurable": {"thread_id": run_id}}
 
@@ -678,6 +683,7 @@ class ResearchJobService:
             total_tokens=meta.get("total_tokens", 0),
             findings_count=findings_count,
             report=report_obj,
+            focus_mode=meta.get("focus_mode", "general"),
             cost_summary=RunCostSummary.model_validate(cost_summary_dict)
             if cost_summary_dict
             else None,

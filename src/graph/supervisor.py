@@ -77,6 +77,8 @@ def route_after_planner(state: ResearchState) -> list[Send] | str:
         max_sub_questions=max_subqs,
         max_wall_clock_seconds=max_wall_clock,
     )
+    focus_mode = state.get("focus_mode", "general")
+
     return [
         Send(
             "researcher",
@@ -88,6 +90,7 @@ def route_after_planner(state: ResearchState) -> list[Send] | str:
                 "start_time": start_time,
                 "max_wall_clock_seconds": max_wall_clock,
                 "deep_scrape": deep_scrape_pref,
+                "focus_mode": focus_mode,
             },
         )
         for idx, sq in enumerate(sub_questions)

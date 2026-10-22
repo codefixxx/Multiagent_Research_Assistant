@@ -238,6 +238,17 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                       </span>
                     )}
 
+                    {/* Focus Mode Badge */}
+                    {run.focus_mode && run.focus_mode !== 'general' && (
+                      <span className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-[#8a5cf6]/15 text-[#a78bfa] border border-[#8a5cf6]/30">
+                        <span>
+                          {run.focus_mode === 'academic' && '🎓 Academic'}
+                          {run.focus_mode === 'technical' && '⚡ Technical'}
+                          {run.focus_mode === 'financial' && '📈 Financial'}
+                        </span>
+                      </span>
+                    )}
+
                     {/* RAG Quality Badge */}
                     {compositeGrade && (
                       <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium bg-[#4a8ad6]/15 text-[#4a8ad6] border border-[#4a8ad6]/30">

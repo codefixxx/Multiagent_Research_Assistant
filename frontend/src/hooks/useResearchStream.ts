@@ -350,7 +350,8 @@ export function useResearchStream() {
     timeLimitSec: number = 120,
     deepScrape: boolean = true,
     modelMatrix?: ModelMatrix,
-    apiKeys?: ApiKeys
+    apiKeys?: ApiKeys,
+    focusMode: string = 'general'
   ) => {
     // Reset workspace
     setJobData(null);
@@ -369,7 +370,8 @@ export function useResearchStream() {
     setStatus('pending');
 
     startTimer();
-    appendLog('SYSTEM', `Dispatching investigation: "${query}"`, 'system');
+    const modeLabel = focusMode === 'general' ? '' : ` [${focusMode.toUpperCase()}]`;
+    appendLog('SYSTEM', `Dispatching${modeLabel} investigation: "${query}"`, 'system');
 
     try {
       const payload = {
@@ -377,6 +379,7 @@ export function useResearchStream() {
         max_sub_questions: subQuestionsCount,
         max_wall_clock_seconds: timeLimitSec,
         deep_scrape: deepScrape,
+        focus_mode: focusMode,
         model_matrix: modelMatrix,
         api_keys: apiKeys
       };

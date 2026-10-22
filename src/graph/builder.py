@@ -118,7 +118,8 @@ def build_research_graph(
         query = state.get("query", "")
         run_id = state.get("run_id", "")
         max_subqs = state.get("max_sub_questions")
-        logger.info("Executing Planner node", step=step, query=query, max_sub_questions=max_subqs)
+        focus_mode = state.get("focus_mode", "general")
+        logger.info("Executing Planner node", step=step, query=query, max_sub_questions=max_subqs, focus_mode=focus_mode)
 
         planner_model = (
             getattr(active_planner_llm, "model_name", None)
@@ -137,7 +138,7 @@ def build_research_graph(
                 },
             ) as span_ctx:
                 plan, tokens, latency = await plan_research(
-                    query=query, llm=active_planner_llm, max_sub_questions=max_subqs
+                    query=query, llm=active_planner_llm, max_sub_questions=max_subqs, focus_mode=focus_mode
                 )
                 cost_usd = calculate_token_cost(
                     str(planner_model), tokens.prompt_tokens, tokens.completion_tokens
@@ -215,6 +216,7 @@ def build_research_graph(
             deep_scrape_flag = payload.get("deep_scrape", True)
             start_time = payload.get("start_time", 0.0)
             max_wall_clock = payload.get("max_wall_clock_seconds")
+            focus_mode = payload.get("focus_mode", "general")
         else:
             plan = _normalize_plan(payload.get("plan"))
             if not plan:
@@ -225,6 +227,7 @@ def build_research_graph(
             deep_scrape_flag = payload.get("deep_scrape", True)
             start_time = payload.get("start_time", 0.0)
             max_wall_clock = payload.get("max_wall_clock_seconds")
+            focus_mode = payload.get("focus_mode", "general")
 
         step_res = 2 + (idx * 2)
         step_rev = 3 + (idx * 2)
@@ -306,6 +309,7 @@ def build_research_graph(
             evidence_res = await collector.collect_evidence_for_queries(
                 queries=queries,
                 deep_scrape=(not is_mock_llm and deep_scrape_flag),
+                focus_mode=focus_mode,
             )
             collect_latency = round((time.time() - collect_t0) * 1000, 2)
             evidence = evidence_res.formatted_context
@@ -349,6 +353,7 @@ def build_research_graph(
                     sub_question=sub_question,
                     evidence_context=evidence,
                     llm=active_researcher_llm,
+                    focus_mode=focus_mode,
                 )
                 findings = output.findings
                 is_answered = output.is_answered
@@ -475,6 +480,7 @@ def build_research_graph(
                 rev_evidence_res = await collector.collect_evidence_for_queries(
                     queries=rev_queries,
                     deep_scrape=(not is_mock_llm and deep_scrape_flag),
+                    focus_mode=focus_mode,
                 )
                 rev_latency_ms = round((time.time() - rev_t0) * 1000, 2)
                 rev_evidence = (
@@ -506,6 +512,7 @@ def build_research_graph(
                         sub_question=sub_question,
                         evidence_context=rev_evidence,
                         llm=active_researcher_llm,
+                        focus_mode=focus_mode,
                     )
                     if rev_output.findings:
                         findings = rev_output.findings
@@ -632,6 +639,7 @@ def build_research_graph(
         plan = _normalize_plan(state.get("plan"))
         findings = _normalize_findings(state.get("findings", []))
         deep_scrape_pref = state.get("deep_scrape", True)
+        focus_mode = state.get("focus_mode", "general")
 
         # 1. Identify which sub-questions currently lack empirical findings
         unanswered_subqs = []
@@ -703,6 +711,7 @@ def build_research_graph(
         evidence_res = await collector.collect_evidence_for_queries(
             queries=gap_queries[:2],
             deep_scrape=bool(not is_mock_llm and deep_scrape_pref),
+            focus_mode=focus_mode,
         )
         collect_latency = round((time.time() - collect_t0) * 1000, 2)
         evidence = evidence_res.formatted_context
@@ -740,6 +749,7 @@ def build_research_graph(
                 sub_question=target_subq,
                 evidence_context=evidence,
                 llm=active_researcher_llm,
+                focus_mode=focus_mode,
             )
             new_findings = output.findings
             for nf in new_findings:
@@ -807,7 +817,8 @@ def build_research_graph(
         query = state.get("query", "")
         run_id = state.get("run_id", "")
         findings = _normalize_findings(state.get("findings", []))
-        logger.info("Executing Writer node", step=step, findings_count=len(findings))
+        focus_mode = state.get("focus_mode", "general")
+        logger.info("Executing Writer node", step=step, findings_count=len(findings), focus_mode=focus_mode)
 
         writer_model = (
             getattr(active_writer_llm, "model_name", None)
@@ -829,6 +840,7 @@ def build_research_graph(
                     query=query,
                     findings=findings,
                     llm=active_writer_llm,
+                    focus_mode=focus_mode,
                 )
                 writer_cost = calculate_token_cost(
                     str(writer_model), tokens.prompt_tokens, tokens.completion_tokens
@@ -1032,6 +1044,7 @@ def create_initial_state(
     max_wall_clock_seconds: float | None = None,
     max_tokens: int | None = None,
     deep_scrape: bool = True,
+    focus_mode: str = "general",
 ) -> ResearchState:
     """Initialize a clean, typed ResearchState instance for a new run."""
     return ResearchState(
@@ -1055,5 +1068,6 @@ def create_initial_state(
         max_wall_clock_seconds=max_wall_clock_seconds,
         max_tokens=max_tokens,
         deep_scrape=deep_scrape,
+        focus_mode=focus_mode,
         error_message=None,
     )
