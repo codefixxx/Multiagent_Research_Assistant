@@ -226,6 +226,7 @@ async def test_get_research_history_endpoint(client):
 async def test_steer_plan_endpoint(client, mock_llm):
     """POST /research/{run_id}/steer accepts human steering actions."""
     from src.api.job_runner import job_service
+
     await job_service.initialize()
     run_id = "test-hitl-steer-01"
 
@@ -279,5 +280,3 @@ async def test_steer_plan_endpoint(client, mock_llm):
         json={"action": "approve"},
     )
     assert bad_res.status_code == 400
-
-

@@ -90,9 +90,7 @@ async def research_subquestion(
             raw_result = await structured_llm.ainvoke(formatted_messages)
     except Exception as exc:
         resolved_model = (
-            getattr(model, "model_name", None)
-            or getattr(model, "model", None)
-            or str(model)
+            getattr(model, "model_name", None) or getattr(model, "model", None) or str(model)
         )
         classified = classify_error(exc, model_name=str(resolved_model), node="researcher")
         logger.error(
@@ -114,13 +112,9 @@ async def research_subquestion(
         token_usage = TokenUsage()
     else:
         resolved_model = (
-            getattr(model, "model_name", None)
-            or getattr(model, "model", None)
-            or str(model)
+            getattr(model, "model_name", None) or getattr(model, "model", None) or str(model)
         )
-        parsing_err = (
-            raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
-        )
+        parsing_err = raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
         from src.core.exceptions import SchemaValidationError
 
         err_details: dict[str, Any] = {

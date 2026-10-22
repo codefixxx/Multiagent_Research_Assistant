@@ -27,6 +27,7 @@ RunStatus = Literal[
 
 def reduce_token_usage(left: Any, right: Any) -> TokenUsage:
     """Accumulate TokenUsage across sequential and parallel graph nodes."""
+
     def _to_usage(val: Any) -> TokenUsage:
         if isinstance(val, TokenUsage):
             return val

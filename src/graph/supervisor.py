@@ -140,7 +140,8 @@ def route_after_consolidator(state: ResearchState) -> str:
         unanswered_subqs = []
         for sq in plan.sub_questions:
             sq_findings = [
-                f for f in findings
+                f
+                for f in findings
                 if getattr(f, "sub_question_id", None) == sq.id
                 or (isinstance(f, dict) and f.get("sub_question_id") == sq.id)
             ]

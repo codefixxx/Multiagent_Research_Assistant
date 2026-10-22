@@ -148,4 +148,3 @@ class RunCostSummary(BaseModel):
         self.prompt_tokens += stage.prompt_tokens
         self.completion_tokens += stage.completion_tokens
         self.total_latency_ms = round(self.total_latency_ms + stage.latency_ms, 2)
-

@@ -273,7 +273,9 @@ class CitationValidator:
                         resp = await client.get(clean_url)
                         return cite, resp.status_code, str(resp.url)
                     except Exception as err:
-                        logger.warning("HTTP citation probe failed", url=cite.source_url, error=str(err))
+                        logger.warning(
+                            "HTTP citation probe failed", url=cite.source_url, error=str(err)
+                        )
                         return cite, 0, cite.source_url
 
             tasks = [_probe_citation(c) for c in result.sanitized_report.citations]
@@ -293,12 +295,22 @@ class CitationValidator:
                             result.resolved_redirects[cite_obj.source_url] = clean_final
                             cite_obj.source_url = clean_final
                             if cite_obj.anchor_url:
-                                fragment = cite_obj.anchor_url.split("#")[1] if "#" in cite_obj.anchor_url else ""
-                                cite_obj.anchor_url = f"{clean_final}#{fragment}" if fragment else clean_final
+                                fragment = (
+                                    cite_obj.anchor_url.split("#")[1]
+                                    if "#" in cite_obj.anchor_url
+                                    else ""
+                                )
+                                cite_obj.anchor_url = (
+                                    f"{clean_final}#{fragment}" if fragment else clean_final
+                                )
 
                     if status_code in (404, 410):
                         result.dead_urls.append(cite_obj.source_url)
-                        logger.warning("Dead link detected in citation", citation_id=cite_obj.citation_id, url=cite_obj.source_url)
+                        logger.warning(
+                            "Dead link detected in citation",
+                            citation_id=cite_obj.citation_id,
+                            url=cite_obj.source_url,
+                        )
 
         # Recompile markdown with resolved canonical URLs
         result.sanitized_report.compile_markdown()

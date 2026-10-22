@@ -73,7 +73,9 @@ class EventBroadcaster:
                 # Publish on Redis channel for decoupled worker -> SSE distribution
                 await self.redis.publish(channel, sse_message)
             except Exception as e:
-                logger.debug("Redis broadcast failed; local delivery used", error=str(e), run_id=run_id)
+                logger.debug(
+                    "Redis broadcast failed; local delivery used", error=str(e), run_id=run_id
+                )
 
     async def subscribe(
         self,
@@ -97,7 +99,9 @@ class EventBroadcaster:
                 pubsub = self.redis.pubsub()
                 await pubsub.subscribe(EVENT_CHANNEL.format(run_id=run_id))
             except Exception as e:
-                logger.debug("Failed opening Redis pubsub, falling back to local queue", error=str(e))
+                logger.debug(
+                    "Failed opening Redis pubsub, falling back to local queue", error=str(e)
+                )
                 if pubsub:
                     try:
                         await pubsub.aclose()

@@ -96,7 +96,9 @@ async def main():
             await asyncio.sleep(2.0)
 
         total_elapsed = time.time() - start_time
-        print(f"\n[Execution Completed in {total_elapsed:.1f}s with status: {final_status['status'].upper()}]")
+        print(
+            f"\n[Execution Completed in {total_elapsed:.1f}s with status: {final_status['status'].upper()}]"
+        )
 
         if final_status["status"] != "completed":
             print(f"ERROR DETAILS: {final_status.get('error_message')}")
@@ -135,7 +137,7 @@ async def main():
                 preview = content[:300] + ("..." if len(content) > 300 else "")
                 print(preview)
 
-            print(f"\nKEY TAKEAWAYS:")
+            print("\nKEY TAKEAWAYS:")
             for takeaway in report.get("key_takeaways", []):
                 print(f"  * {takeaway}")
 

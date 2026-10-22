@@ -61,7 +61,9 @@ def test_sync_trace_span():
     run_id = "test-sync-trace"
     clear_run_spans(run_id)
 
-    with sync_trace_span("sync_tool_call", run_id=run_id, attributes={"tool": "tavily_search"}) as ctx:
+    with sync_trace_span(
+        "sync_tool_call", run_id=run_id, attributes={"tool": "tavily_search"}
+    ) as ctx:
         ctx["query"] = "quantum error correction"
         ctx["results_count"] = 5
 

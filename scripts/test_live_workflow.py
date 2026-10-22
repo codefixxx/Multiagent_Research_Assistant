@@ -54,7 +54,9 @@ async def main():
     # 2. Verify Live LLM Provider
     print(f"\n[2/5] Initializing Live LLM Provider ({settings.LLM_PROVIDER.upper()})...")
     llm = get_chat_model()
-    print(f"      Model configured: {settings.GEMINI_MODEL if settings.LLM_PROVIDER == 'gemini' else settings.GROQ_MODEL}")
+    print(
+        f"      Model configured: {settings.GEMINI_MODEL if settings.LLM_PROVIDER == 'gemini' else settings.GROQ_MODEL}"
+    )
 
     # 3. Initialize Background Job Service with Live Components
     print("\n[3/5] Initializing FastAPI Background Job Engine...")
@@ -90,7 +92,7 @@ async def main():
                         event_data = json.loads(line.replace("data:", "").strip())
                     except Exception:
                         pass
-            
+
             # Print formatted event
             if event_name not in ("unknown", "ping") and event_data:
                 print(f"  >>> [SSE EVENT] {event_name.upper()}")
@@ -146,7 +148,9 @@ async def main():
     assert trace is not None
     print(f"\n      Audit Trace Steps Recorded: {len(trace.steps)}")
     for st in trace.steps:
-        print(f"        Step {st.step_number}: Agent={st.agent_name:<16} Latency={st.latency_ms:.1f}ms Tokens={st.token_usage.total_tokens}")
+        print(
+            f"        Step {st.step_number}: Agent={st.agent_name:<16} Latency={st.latency_ms:.1f}ms Tokens={st.token_usage.total_tokens}"
+        )
 
     # Verify direct Redis Keys
     raw_meta = await client.get(f"research:run:{run_id}:metadata")

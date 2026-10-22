@@ -2,14 +2,15 @@
 
 import io
 import json
+
 import docx
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.main import app
 from src.api.job_runner import job_service
+from src.api.main import app
 from src.core.telemetry import RunCostSummary
-from src.export.engine import ExportFormat, ReportExportEngine
+from src.export.engine import ReportExportEngine
 from src.schemas.api import ResearchStatusResponse
 from src.schemas.report import Citation, ReportSection, ResearchReport
 from src.validators.rag_scorer import RAGQualityScore
@@ -109,7 +110,9 @@ def test_export_html(sample_status_response: ResearchStatusResponse):
     assert "Executive Summary" in html_doc
     assert "State Synchronization &amp; Persistence" in html_doc
     assert "citations-table" in html_doc
-    assert "Audit &amp; Verification Ledger" in html_doc or "Audit & Verification Ledger" in html_doc
+    assert (
+        "Audit &amp; Verification Ledger" in html_doc or "Audit & Verification Ledger" in html_doc
+    )
     assert "HTTP 200" in html_doc
 
 
@@ -140,7 +143,9 @@ def test_export_json(sample_status_response: ResearchStatusResponse):
     parsed = json.loads(json_bytes.decode("utf-8"))
     assert parsed["run_id"] == "test-export-run-12345678"
     assert parsed["status"] == "completed"
-    assert parsed["report"]["title"] == "Comprehensive Analysis: Multi-Agent Distributed Architectures"
+    assert (
+        parsed["report"]["title"] == "Comprehensive Analysis: Multi-Agent Distributed Architectures"
+    )
 
 
 @pytest.mark.asyncio
@@ -156,19 +161,25 @@ async def test_export_pdf(sample_status_response: ResearchStatusResponse):
 async def test_export_dispatch(sample_status_response: ResearchStatusResponse):
     """Test unified export dispatch returns correct content, media-type, and filename."""
     # Test Markdown
-    content, media, filename = await ReportExportEngine.export(sample_status_response, format="markdown")
+    content, media, filename = await ReportExportEngine.export(
+        sample_status_response, format="markdown"
+    )
     assert media == "text/markdown; charset=utf-8"
     assert filename == "research_report_test-exp.md"
     assert b"Executive Summary" in content
 
     # Test DOCX
-    content, media, filename = await ReportExportEngine.export(sample_status_response, format="docx")
+    content, media, filename = await ReportExportEngine.export(
+        sample_status_response, format="docx"
+    )
     assert media == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     assert filename == "research_report_test-exp.docx"
     assert len(content) > 5000
 
     # Test HTML
-    content, media, filename = await ReportExportEngine.export(sample_status_response, format="html")
+    content, media, filename = await ReportExportEngine.export(
+        sample_status_response, format="html"
+    )
     assert media == "text/html; charset=utf-8"
     assert filename == "research_report_test-exp.html"
     assert b"<!DOCTYPE html>" in content
@@ -179,7 +190,9 @@ async def test_export_dispatch(sample_status_response: ResearchStatusResponse):
 
 
 @pytest.mark.asyncio
-async def test_api_export_endpoint(sample_status_response: ResearchStatusResponse, monkeypatch: pytest.MonkeyPatch):
+async def test_api_export_endpoint(
+    sample_status_response: ResearchStatusResponse, monkeypatch: pytest.MonkeyPatch
+):
     """Test FastAPI GET /research/{run_id}/export route integration."""
     client = TestClient(app)
 
@@ -202,14 +215,20 @@ async def test_api_export_endpoint(sample_status_response: ResearchStatusRespons
     resp_md = client.get(f"/research/{sample_status_response.run_id}/export?format=md")
     assert resp_md.status_code == 200
     assert "text/markdown" in resp_md.headers["content-type"]
-    assert 'attachment; filename="research_report_test-exp.md"' in resp_md.headers["content-disposition"]
+    assert (
+        'attachment; filename="research_report_test-exp.md"'
+        in resp_md.headers["content-disposition"]
+    )
     assert "Executive Summary" in resp_md.text
 
     # 2. Export as DOCX
     resp_docx = client.get(f"/research/{sample_status_response.run_id}/export?format=docx")
     assert resp_docx.status_code == 200
     assert "wordprocessingml.document" in resp_docx.headers["content-type"]
-    assert 'attachment; filename="research_report_test-exp.docx"' in resp_docx.headers["content-disposition"]
+    assert (
+        'attachment; filename="research_report_test-exp.docx"'
+        in resp_docx.headers["content-disposition"]
+    )
     assert len(resp_docx.content) > 5000
 
     # 3. Export as HTML
@@ -226,7 +245,9 @@ async def test_api_export_endpoint(sample_status_response: ResearchStatusRespons
     assert data["run_id"] == sample_status_response.run_id
 
     # 5. Invalid format returns 400
-    resp_invalid = client.get(f"/research/{sample_status_response.run_id}/export?format=unsupported")
+    resp_invalid = client.get(
+        f"/research/{sample_status_response.run_id}/export?format=unsupported"
+    )
     assert resp_invalid.status_code == 400
 
     # 6. Nonexistent run returns 404

@@ -60,9 +60,7 @@ def evaluate_budget(
         max_wall_clock_seconds=float(dynamic_wall_clock)
         if dynamic_wall_clock
         else float(settings.MAX_WALL_CLOCK_SECONDS),
-        max_budget_tokens=dynamic_tokens
-        if dynamic_tokens
-        else settings.MAX_BUDGET_TOKENS,
+        max_budget_tokens=dynamic_tokens if dynamic_tokens else settings.MAX_BUDGET_TOKENS,
         max_sub_questions=dynamic_sub_questions
         if dynamic_sub_questions
         else settings.MAX_SUB_QUESTIONS,
@@ -134,7 +132,9 @@ def can_attempt_gap_fill(
     3. At least min_headroom_seconds remain before hitting the hard wall-clock ceiling.
     """
     effective_limits = limits or BudgetLimits(
-        max_wall_clock_seconds=float(state.get("max_wall_clock_seconds") or settings.MAX_WALL_CLOCK_SECONDS),
+        max_wall_clock_seconds=float(
+            state.get("max_wall_clock_seconds") or settings.MAX_WALL_CLOCK_SECONDS
+        ),
         max_budget_tokens=state.get("max_tokens") or settings.MAX_BUDGET_TOKENS,
     )
 

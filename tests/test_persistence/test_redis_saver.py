@@ -248,5 +248,3 @@ async def test_clear_run_removes_from_index():
     await manager.clear_run("run-to-delete")
     total_after, runs_after = await manager.list_recent_runs(limit=10, offset=0)
     assert not any(r["run_id"] == "run-to-delete" for r in runs_after)
-
-

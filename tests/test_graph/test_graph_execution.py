@@ -76,12 +76,14 @@ async def test_parallel_fan_out_multi_worker_execution(mock_llm):
 async def test_deep_research_gap_filler_executes_on_unanswered_subquestions():
     """Verify that when parallel workers leave a gap, the gap_filler node triggers and completes."""
     from langchain_core.runnables import RunnableLambda
+
+    from src.schemas.finding import ExtractionStatus, FindingRecord, ResearcherOutput
     from tests.conftest import MockChatModel
-    from src.schemas.finding import ResearcherOutput, FindingRecord, ExtractionStatus
 
     class GapInducingMockModel(MockChatModel):
         def with_structured_output(self, schema, *, include_raw=False, **kwargs):
             if schema == ResearcherOutput:
+
                 def _invoke(messages):
                     msg_str = str(messages)
                     if "overview documentation" in msg_str:
@@ -134,6 +136,7 @@ async def test_deep_research_gap_filler_executes_on_unanswered_subquestions():
 async def test_graph_human_in_the_loop_steering(mock_llm):
     """Verify Human-in-the-Loop plan gate: pauses execution, accepts modified plan, and proceeds."""
     import asyncio
+
     from src.api.job_runner import job_service
     from src.schemas.plan import ResearchPlan, SubQuestion
 

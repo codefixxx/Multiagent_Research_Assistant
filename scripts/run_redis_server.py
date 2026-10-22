@@ -1,6 +1,5 @@
 """Standalone Redis TCP server on localhost:6379 using fakeredis.TcpFakeServer."""
 
-import sys
 import fakeredis
 
 if __name__ == "__main__":

@@ -141,7 +141,9 @@ async def test_worker_processes_job_from_queue(mock_llm):
     await service.run_manager.init_run(run_id=run_id, query=request.query)
 
     # Instantiate worker with the service
-    worker = ResearchWorker(worker_id="test-unit-worker-1", concurrency=1, job_service=service, queue=queue)
+    worker = ResearchWorker(
+        worker_id="test-unit-worker-1", concurrency=1, job_service=service, queue=queue
+    )
 
     job_data = await queue.dequeue(timeout=1.0)
     assert job_data is not None
@@ -195,7 +197,9 @@ async def test_event_broadcaster_redis_history_replay():
     # Worker broadcasts series of events
     await broadcaster.broadcast(run_id=run_id, event="job_queued", data={"status": "queued"})
     await broadcaster.broadcast(run_id=run_id, event="job_started", data={"status": "planning"})
-    await broadcaster.broadcast(run_id=run_id, event="job_completed", data={"status": "completed", "title": "Done"})
+    await broadcaster.broadcast(
+        run_id=run_id, event="job_completed", data={"status": "completed", "title": "Done"}
+    )
 
     # Client connects later and subscribes
     replayed_events: list[str] = []
@@ -233,7 +237,9 @@ async def test_chaos_fastapi_reboot_worker_uninterrupted(mock_llm):
     # Dedicated Worker Process (Independent of Web Server 1)
     worker_service = ResearchJobService(queue=queue, llm=mock_llm)
     await worker_service.initialize()
-    worker = ResearchWorker(worker_id="chaos-worker-node", concurrency=1, job_service=worker_service, queue=queue)
+    worker = ResearchWorker(
+        worker_id="chaos-worker-node", concurrency=1, job_service=worker_service, queue=queue
+    )
 
     job_data = await queue.dequeue(timeout=1.0)
     assert job_data is not None

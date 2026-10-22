@@ -4,7 +4,6 @@ Calculates deterministic Groundedness, Citation Precision, and Topic Coverage
 metrics for generated research reports without requiring extra LLM calls.
 """
 
-
 from pydantic import BaseModel, Field
 
 from src.schemas.finding import FindingRecord
@@ -87,17 +86,16 @@ def calculate_rag_quality_score(
 
     grounded_cites = 0
     for c in citations:
-        c_url = getattr(c, "source_url", None) or (c.get("source_url") if isinstance(c, dict) else "")
+        c_url = getattr(c, "source_url", None) or (
+            c.get("source_url") if isinstance(c, dict) else ""
+        )
         c_claim = getattr(c, "verified_claim", None) or (
             c.get("verified_claim") if isinstance(c, dict) else ""
         )
         norm_url = _normalize_url(c_url) if c_url else ""
         url_match = bool(norm_url and norm_url in finding_urls)
         claim_match = (
-            any(
-                str(c_claim).lower() in fc or fc in str(c_claim).lower()
-                for fc in finding_claims
-            )
+            any(str(c_claim).lower() in fc or fc in str(c_claim).lower() for fc in finding_claims)
             if c_claim
             else False
         )
@@ -112,7 +110,9 @@ def calculate_rag_quality_score(
 
     # 2. Citation Precision Score: based on citation validation result
     if validation_result:
-        val_total = getattr(validation_result, "total_citations", total_citations) or total_citations
+        val_total = (
+            getattr(validation_result, "total_citations", total_citations) or total_citations
+        )
         val_verified = len(getattr(validation_result, "verified_citations", []))
         val_hallucinated = len(getattr(validation_result, "hallucinated_citations", []))
         val_dead = len(getattr(validation_result, "dead_urls", []))

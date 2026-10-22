@@ -76,7 +76,7 @@ class ResearchReport(BaseModel):
             md_lines.append("## References & Citations")
             for cite in self.citations:
                 target_url = cite.anchor_url or cite.source_url
-                quote_suffix = f" — Quote: \"_{cite.verbatim_quote}_\"" if cite.verbatim_quote else ""
+                quote_suffix = f' — Quote: "_{cite.verbatim_quote}_"' if cite.verbatim_quote else ""
                 md_lines.append(
                     f"- **{cite.citation_id}**: [{cite.source_url}]({target_url}) - _{cite.verified_claim}_{quote_suffix}"
                 )

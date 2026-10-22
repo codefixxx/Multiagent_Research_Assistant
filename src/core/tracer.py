@@ -87,7 +87,9 @@ async def async_trace_span(
 
         span_id = hex(otel_span.get_span_context().span_id)
         parent_ctx = getattr(otel_span, "parent", None)
-        parent_span_id = hex(parent_ctx.span_id) if parent_ctx and getattr(parent_ctx, "span_id", None) else None
+        parent_span_id = (
+            hex(parent_ctx.span_id) if parent_ctx and getattr(parent_ctx, "span_id", None) else None
+        )
 
         try:
             yield dynamic_context
@@ -107,7 +109,9 @@ async def async_trace_span(
             final_attrs = {**span_attrs, **dynamic_context}
             for k, v in dynamic_context.items():
                 if v is not None:
-                    otel_span.set_attribute(k, str(v) if not isinstance(v, (int, float, bool)) else v)
+                    otel_span.set_attribute(
+                        k, str(v) if not isinstance(v, (int, float, bool)) else v
+                    )
 
             span_record = {
                 "span_id": span_id,
@@ -149,7 +153,9 @@ def sync_trace_span(
 
         span_id = hex(otel_span.get_span_context().span_id)
         parent_ctx = getattr(otel_span, "parent", None)
-        parent_span_id = hex(parent_ctx.span_id) if parent_ctx and getattr(parent_ctx, "span_id", None) else None
+        parent_span_id = (
+            hex(parent_ctx.span_id) if parent_ctx and getattr(parent_ctx, "span_id", None) else None
+        )
 
         try:
             yield dynamic_context
@@ -168,7 +174,9 @@ def sync_trace_span(
             final_attrs = {**span_attrs, **dynamic_context}
             for k, v in dynamic_context.items():
                 if v is not None:
-                    otel_span.set_attribute(k, str(v) if not isinstance(v, (int, float, bool)) else v)
+                    otel_span.set_attribute(
+                        k, str(v) if not isinstance(v, (int, float, bool)) else v
+                    )
 
             span_record = {
                 "span_id": span_id,

@@ -38,12 +38,27 @@ def test_playwright_cloudflare_challenge_detection():
     client = PlaywrightScraperClient()
 
     # Title detection
-    assert client._is_cloudflare_challenge("Just a moment...", "<html><body>content</body></html>") is True
-    assert client._is_cloudflare_challenge("Attention Required! | Cloudflare", "<html></html>") is True
-    assert client._is_cloudflare_challenge("Official Documentation", "<html>Just a moment... please wait</html>") is True
+    assert (
+        client._is_cloudflare_challenge("Just a moment...", "<html><body>content</body></html>")
+        is True
+    )
+    assert (
+        client._is_cloudflare_challenge("Attention Required! | Cloudflare", "<html></html>") is True
+    )
+    assert (
+        client._is_cloudflare_challenge(
+            "Official Documentation", "<html>Just a moment... please wait</html>"
+        )
+        is True
+    )
 
     # Benign pages
-    assert client._is_cloudflare_challenge("React Documentation", "<html><body><article>Welcome</article></body></html>") is False
+    assert (
+        client._is_cloudflare_challenge(
+            "React Documentation", "<html><body><article>Welcome</article></body></html>"
+        )
+        is False
+    )
 
 
 def test_playwright_content_truncation():
@@ -90,15 +105,19 @@ async def test_playwright_mock_success_extraction():
     mock_pw_cm.__aenter__.return_value = mock_playwright_instance
     mock_pw_cm.__aexit__.return_value = None
 
-    with patch("playwright.async_api.async_playwright", return_value=mock_pw_cm), \
-         patch("playwright_stealth.Stealth.apply_stealth_async", new=AsyncMock()):
-
+    with (
+        patch("playwright.async_api.async_playwright", return_value=mock_pw_cm),
+        patch("playwright_stealth.Stealth.apply_stealth_async", new=AsyncMock()),
+    ):
         client = PlaywrightScraperClient(timeout=5.0, max_words=500)
         doc = await client.read_url("https://example-spa.com/telemetry")
 
         assert doc.status == ExtractionStatus.SUCCESS
         assert doc.title == "Mock Modern SPA Dashboard"
-        assert "Real-time Agent Telemetry" in doc.raw_text or "multi-agent research assistant" in doc.raw_text
+        assert (
+            "Real-time Agent Telemetry" in doc.raw_text
+            or "multi-agent research assistant" in doc.raw_text
+        )
         assert doc.tier == "tier3_playwright"
         assert doc.word_count > 0
 
@@ -107,14 +126,18 @@ async def test_playwright_mock_success_extraction():
 async def test_playwright_mock_spa_dom_eval_fallback():
     """Verify that when trafilatura finds no structured article, in-browser JS evaluation recovers SPA text."""
     # A single div container with no semantic article tags
-    html_markup = "<html><head><title>Vue SPA</title></head><body><div id='app'></div></body></html>"
+    html_markup = (
+        "<html><head><title>Vue SPA</title></head><body><div id='app'></div></body></html>"
+    )
 
     mock_page = AsyncMock()
     mock_page.title.return_value = "Vue Dynamic SPA"
     mock_page.content.return_value = html_markup
     mock_page.goto.return_value = MagicMock(status=200)
     # in-browser evaluation returns dynamically rendered content
-    mock_page.evaluate.return_value = "Client-side rendered dynamic SPA content recovered directly from DOM body"
+    mock_page.evaluate.return_value = (
+        "Client-side rendered dynamic SPA content recovered directly from DOM body"
+    )
 
     mock_context = AsyncMock()
     mock_context.new_page.return_value = mock_page
@@ -128,10 +151,11 @@ async def test_playwright_mock_spa_dom_eval_fallback():
     mock_pw_cm.__aenter__.return_value = mock_playwright_instance
     mock_pw_cm.__aexit__.return_value = None
 
-    with patch("playwright.async_api.async_playwright", return_value=mock_pw_cm), \
-         patch("playwright_stealth.Stealth.apply_stealth_async", new=AsyncMock()), \
-         patch("trafilatura.extract", return_value=None):
-
+    with (
+        patch("playwright.async_api.async_playwright", return_value=mock_pw_cm),
+        patch("playwright_stealth.Stealth.apply_stealth_async", new=AsyncMock()),
+        patch("trafilatura.extract", return_value=None),
+    ):
         client = PlaywrightScraperClient()
         doc = await client.read_url("https://vue-spa.example.org")
 
@@ -146,7 +170,9 @@ async def test_playwright_mock_cloudflare_challenge_blocked():
     """Verify that when Cloudflare challenge is encountered in Playwright, BLOCKED status is returned."""
     mock_page = AsyncMock()
     mock_page.title.return_value = "Just a moment..."
-    mock_page.content.return_value = "<html><body>Checking your browser before accessing...</body></html>"
+    mock_page.content.return_value = (
+        "<html><body>Checking your browser before accessing...</body></html>"
+    )
     mock_page.goto.return_value = MagicMock(status=403)
 
     mock_context = AsyncMock()
@@ -161,9 +187,10 @@ async def test_playwright_mock_cloudflare_challenge_blocked():
     mock_pw_cm.__aenter__.return_value = mock_playwright_instance
     mock_pw_cm.__aexit__.return_value = None
 
-    with patch("playwright.async_api.async_playwright", return_value=mock_pw_cm), \
-         patch("playwright_stealth.Stealth.apply_stealth_async", new=AsyncMock()):
-
+    with (
+        patch("playwright.async_api.async_playwright", return_value=mock_pw_cm),
+        patch("playwright_stealth.Stealth.apply_stealth_async", new=AsyncMock()),
+    ):
         client = PlaywrightScraperClient()
         doc = await client.read_url("https://cloudflare-protected.example.com")
 
@@ -178,7 +205,9 @@ async def test_playwright_timeout_handling():
     from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
     mock_playwright_instance = MagicMock()
-    mock_playwright_instance.chromium.launch = AsyncMock(side_effect=PlaywrightTimeoutError("Navigation timed out"))
+    mock_playwright_instance.chromium.launch = AsyncMock(
+        side_effect=PlaywrightTimeoutError("Navigation timed out")
+    )
 
     mock_pw_cm = AsyncMock()
     mock_pw_cm.__aenter__.return_value = mock_playwright_instance
@@ -202,6 +231,7 @@ async def test_playwright_timeout_handling():
 @pytest.mark.asyncio
 async def test_3tier_cascade_tier1_direct_success(monkeypatch):
     """When direct HTTP scrape succeeds (200 OK + text), neither Jina nor Playwright is invoked."""
+
     class MockResponse:
         status_code = 200
         headers = {"content-type": "text/html"}
@@ -244,6 +274,7 @@ async def test_3tier_cascade_tier1_direct_success(monkeypatch):
 @pytest.mark.asyncio
 async def test_3tier_cascade_tier2_jina_success_when_tier1_blocked(monkeypatch):
     """When direct HTTP scrape is blocked (403), Jina Reader recovers the content and Playwright is not needed."""
+
     class MockResponse:
         status_code = 403
         headers = {"content-type": "text/html"}
@@ -295,6 +326,7 @@ async def test_3tier_cascade_tier2_jina_success_when_tier1_blocked(monkeypatch):
 @pytest.mark.asyncio
 async def test_3tier_cascade_tier3_playwright_success_when_tier1_and_tier2_fail(monkeypatch):
     """When direct HTTP returns 403 AND Jina fails/blocked, Playwright Stealth recovers the page!"""
+
     class MockResponse:
         status_code = 403
         headers = {"content-type": "text/html"}
@@ -354,10 +386,13 @@ async def test_3tier_cascade_tier3_playwright_success_when_tier1_and_tier2_fail(
 @pytest.mark.asyncio
 async def test_3tier_cascade_empty_spa_fallback_to_playwright(monkeypatch):
     """When direct HTTP returns 200 with empty JS container, Playwright renders dynamic DOM."""
+
     class MockResponse:
         status_code = 200
         headers = {"content-type": "text/html"}
-        text = "<html><head><title>Empty SPA</title></head><body><div id='root'></div></body></html>"
+        text = (
+            "<html><head><title>Empty SPA</title></head><body><div id='root'></div></body></html>"
+        )
 
     class MockAsyncClient:
         def __init__(self, *args, **kwargs):
@@ -411,6 +446,7 @@ async def test_3tier_cascade_empty_spa_fallback_to_playwright(monkeypatch):
 @pytest.mark.asyncio
 async def test_playwright_disabled_flag(monkeypatch):
     """When enable_playwright_fallback=False, Playwright is not invoked even if Tier 1 and 2 fail."""
+
     class MockResponse:
         status_code = 403
         headers = {"content-type": "text/html"}

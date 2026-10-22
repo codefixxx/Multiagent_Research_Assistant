@@ -17,7 +17,9 @@ class ModelMatrixConfig(BaseModel):
     """Configures specialized model choices for each agent role."""
 
     planner: str | None = Field(default=None, description="Model for the Planner agent")
-    researcher: str | None = Field(default=None, description="Model for parallel Researcher workers")
+    researcher: str | None = Field(
+        default=None, description="Model for parallel Researcher workers"
+    )
     reviewer: str | None = Field(default=None, description="Model for the Reviewer agent")
     writer: str | None = Field(default=None, description="Model for the Report Writer agent")
 
@@ -143,13 +145,20 @@ class ResearchStatusResponse(BaseModel):
     step_count: int = 0
     total_tokens: int = 0
     findings_count: int = 0
-    plan: ResearchPlan | None = Field(default=None, description="Decomposed research plan (available during review and completion).")
+    plan: ResearchPlan | None = Field(
+        default=None,
+        description="Decomposed research plan (available during review and completion).",
+    )
     report: ResearchReport | None = None
     citation_validation: CitationValidationResult | None = None
     cost_summary: RunCostSummary | None = None
     rag_score: RAGQualityScore | None = None
-    focus_mode: str | None = Field(default="general", description="Focus mode configured for the run.")
-    hitl_enabled: bool = Field(default=False, description="Whether Human-in-the-Loop review is active for this run.")
+    focus_mode: str | None = Field(
+        default="general", description="Focus mode configured for the run."
+    )
+    hitl_enabled: bool = Field(
+        default=False, description="Whether Human-in-the-Loop review is active for this run."
+    )
     error_message: str | None = None
     error_code: str | None = None
     error_suggestion: str | None = None
@@ -164,7 +173,9 @@ class ResearchHistoryItem(BaseModel):
     run_id: str
     query: str
     status: str
-    focus_mode: str | None = Field(default="general", description="Focus mode configured for the run.")
+    focus_mode: str | None = Field(
+        default="general", description="Focus mode configured for the run."
+    )
     created_at: str | None = None
     updated_at: str | None = None
     step_count: int = 0
@@ -217,8 +228,12 @@ class StreamEventData(BaseModel):
 class ModelValidationRequest(BaseModel):
     """Payload to test and verify LLM credentials and model availability."""
 
-    provider: str | None = Field(default=None, description="LLM provider: gemini, groq, openai, anthropic, ollama")
-    model_name: str | None = Field(default=None, description="Model identifier to test (e.g. 'gemini-2.5-flash')")
+    provider: str | None = Field(
+        default=None, description="LLM provider: gemini, groq, openai, anthropic, ollama"
+    )
+    model_name: str | None = Field(
+        default=None, description="Model identifier to test (e.g. 'gemini-2.5-flash')"
+    )
     api_key: str | None = Field(default=None, description="Optional API key to test")
 
 

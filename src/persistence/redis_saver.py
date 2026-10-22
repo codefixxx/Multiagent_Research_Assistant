@@ -229,7 +229,9 @@ class RedisRunManager:
             now_ts = time.time()
             await self.redis.zadd(self._index_key(), {run_id: now_ts})
             if self.default_ttl and self.default_ttl > 0:
-                await self.redis.zremrangebyscore(self._index_key(), "-inf", now_ts - self.default_ttl)
+                await self.redis.zremrangebyscore(
+                    self._index_key(), "-inf", now_ts - self.default_ttl
+                )
         except Exception as e:
             logger.debug("Failed indexing run in Sorted Set", run_id=run_id, error=str(e))
 
@@ -310,10 +312,7 @@ class RedisRunManager:
             return 0, []
 
         raw_ids = await self.redis.zrevrange(idx_key, offset, offset + limit - 1)
-        run_ids = [
-            rid.decode("utf-8") if isinstance(rid, bytes) else rid
-            for rid in raw_ids
-        ]
+        run_ids = [rid.decode("utf-8") if isinstance(rid, bytes) else rid for rid in raw_ids]
 
         if not run_ids:
             return total, []
@@ -482,7 +481,6 @@ class RedisRunManager:
             await self.redis.zrem(self._index_key(), run_id)
         except Exception:
             pass
-
 
 
 class NodeIdempotencyCache:

@@ -162,9 +162,7 @@ class DeepPageScraper:
                     )
                     from src.tools.playwright_scraper import PlaywrightScraperClient
 
-                    pw = self.playwright_client or PlaywrightScraperClient(
-                        max_words=self.max_words
-                    )
+                    pw = self.playwright_client or PlaywrightScraperClient(max_words=self.max_words)
                     pw_doc = await pw.read_url(url)
                     if pw_doc.status == ExtractionStatus.SUCCESS:
                         return pw_doc
@@ -226,9 +224,7 @@ class DeepPageScraper:
                     )
                     from src.tools.playwright_scraper import PlaywrightScraperClient
 
-                    pw = self.playwright_client or PlaywrightScraperClient(
-                        max_words=self.max_words
-                    )
+                    pw = self.playwright_client or PlaywrightScraperClient(max_words=self.max_words)
                     pw_doc = await pw.read_url(url)
                     if pw_doc.status == ExtractionStatus.SUCCESS:
                         return pw_doc

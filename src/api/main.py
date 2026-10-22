@@ -47,10 +47,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Global Exception Handlers ensuring consistent, structured error responses
 @app.exception_handler(ApplicationError)
 async def application_error_handler(request: Request, exc: ApplicationError) -> JSONResponse:
-    logger.error("Handled ApplicationError", path=request.url.path, code=exc.code, error=exc.message)
+    logger.error(
+        "Handled ApplicationError", path=request.url.path, code=exc.code, error=exc.message
+    )
     return JSONResponse(
         status_code=exc.status_code,
         content=exc.to_dict(),
@@ -75,11 +78,17 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     app_err = classify_error(exc)
-    logger.error("Unhandled exception caught by global handler", path=request.url.path, code=app_err.code, error=app_err.message)
+    logger.error(
+        "Unhandled exception caught by global handler",
+        path=request.url.path,
+        code=app_err.code,
+        error=app_err.message,
+    )
     return JSONResponse(
         status_code=app_err.status_code,
         content=app_err.to_dict(),
     )
+
 
 # Configure CORS
 app.add_middleware(

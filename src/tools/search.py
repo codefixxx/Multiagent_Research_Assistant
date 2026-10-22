@@ -1,7 +1,7 @@
 """Production Search Tool with Tavily API primary and DuckDuckGo fallback."""
 
-import inspect
 import asyncio
+import inspect
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -190,11 +190,17 @@ class DuckDuckGoSearchClient(BaseSearchEngine):
 
             effective_query = query
             if focus_mode == "academic":
-                effective_query = f"{query} (site:arxiv.org OR site:nih.gov OR research OR paper OR methodology)"
+                effective_query = (
+                    f"{query} (site:arxiv.org OR site:nih.gov OR research OR paper OR methodology)"
+                )
             elif focus_mode == "technical":
-                effective_query = f"{query} (site:github.com OR documentation OR architecture OR benchmark)"
+                effective_query = (
+                    f"{query} (site:github.com OR documentation OR architecture OR benchmark)"
+                )
             elif focus_mode == "financial":
-                effective_query = f"{query} (site:sec.gov OR earnings OR financial results OR revenue OR 10-K)"
+                effective_query = (
+                    f"{query} (site:sec.gov OR earnings OR financial results OR revenue OR 10-K)"
+                )
 
             def _sync_ddg_search() -> list[dict[str, Any]]:
                 with DDGS(timeout=int(self.timeout)) as ddgs:
@@ -214,7 +220,12 @@ class DuckDuckGoSearchClient(BaseSearchEngine):
                     )
                 )
 
-            logger.info("DuckDuckGo search completed", query=effective_query, focus_mode=focus_mode, results_count=len(results))
+            logger.info(
+                "DuckDuckGo search completed",
+                query=effective_query,
+                focus_mode=focus_mode,
+                results_count=len(results),
+            )
             return results
 
         except Exception as e:
@@ -287,7 +298,9 @@ class MultiSearchClient:
         """
         # 0. Injected mock client takes absolute priority (for test isolation)
         if self.mock is not None:
-            results = await _safe_client_search(self.mock, query, max_results=max_results, focus_mode=focus_mode)
+            results = await _safe_client_search(
+                self.mock, query, max_results=max_results, focus_mode=focus_mode
+            )
             status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
             return results, status
 
@@ -295,14 +308,18 @@ class MultiSearchClient:
 
         # 1. Force Mock Mode if configured in settings
         if mode == "mock" or settings.LLM_PROVIDER == "mock":
-            results = await _safe_client_search(MockSearchClient(), query, max_results=max_results, focus_mode=focus_mode)
+            results = await _safe_client_search(
+                MockSearchClient(), query, max_results=max_results, focus_mode=focus_mode
+            )
             status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
             return results, status
 
         # 2. Force DuckDuckGo if requested
         if mode == "duckduckgo":
             try:
-                results = await _safe_client_search(self.ddg, query, max_results=max_results, focus_mode=focus_mode)
+                results = await _safe_client_search(
+                    self.ddg, query, max_results=max_results, focus_mode=focus_mode
+                )
                 status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
                 return results, status
             except SearchError as e:
@@ -314,7 +331,9 @@ class MultiSearchClient:
         # 3. Force Tavily if requested
         if mode == "tavily":
             try:
-                results = await _safe_client_search(self.tavily, query, max_results=max_results, focus_mode=focus_mode)
+                results = await _safe_client_search(
+                    self.tavily, query, max_results=max_results, focus_mode=focus_mode
+                )
                 status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
                 return results, status
             except SearchError as e:
@@ -324,7 +343,9 @@ class MultiSearchClient:
         # 4. Auto mode: Try Tavily first if key is provided, fallback to DuckDuckGo
         if settings.TAVILY_API_KEY:
             try:
-                results = await _safe_client_search(self.tavily, query, max_results=max_results, focus_mode=focus_mode)
+                results = await _safe_client_search(
+                    self.tavily, query, max_results=max_results, focus_mode=focus_mode
+                )
                 if results:
                     return results, ExtractionStatus.SUCCESS
             except SearchError as e:
@@ -336,7 +357,9 @@ class MultiSearchClient:
 
         # Fallback to DuckDuckGo
         try:
-            results = await _safe_client_search(self.ddg, query, max_results=max_results, focus_mode=focus_mode)
+            results = await _safe_client_search(
+                self.ddg, query, max_results=max_results, focus_mode=focus_mode
+            )
             status = ExtractionStatus.SUCCESS if results else ExtractionStatus.NO_RESULTS
             return results, status
         except SearchError as e:

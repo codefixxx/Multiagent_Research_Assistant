@@ -84,15 +84,17 @@ class ReportExportEngine:
                 f"> **Resource Telemetry:** {status_resp.total_tokens:,} tokens consumed (~${cost.total_cost_usd:.4f} USD) across {status_resp.findings_count} verified sources  "
             )
 
-        lines.extend([
-            "",
-            "---",
-            "",
-            "## Executive Summary",
-            "",
-            report.executive_summary,
-            "",
-        ])
+        lines.extend(
+            [
+                "",
+                "---",
+                "",
+                "## Executive Summary",
+                "",
+                report.executive_summary,
+                "",
+            ]
+        )
 
         for section in report.sections:
             lines.append(f"## {section.title}")
@@ -101,12 +103,14 @@ class ReportExportEngine:
             lines.append("")
 
         if report.citations:
-            lines.extend([
-                "## References & Verified Citations",
-                "",
-                "| ID | Source URL | Verified Claim | Status |",
-                "| :--- | :--- | :--- | :--- |",
-            ])
+            lines.extend(
+                [
+                    "## References & Verified Citations",
+                    "",
+                    "| ID | Source URL | Verified Claim | Status |",
+                    "| :--- | :--- | :--- | :--- |",
+                ]
+            )
             for cite in report.citations:
                 target_url = cite.anchor_url or cite.source_url
                 clean_url = cite.source_url.split("?")[0]
@@ -120,27 +124,33 @@ class ReportExportEngine:
             lines.append("")
 
         # Quality & Telemetry Appendix
-        lines.extend([
-            "---",
-            "",
-            "## Quality & Telemetry Appendix",
-            "",
-            f"- **Execution Status:** `{status_resp.status}`",
-            f"- **Total Agent Steps:** {status_resp.step_count}",
-            f"- **Verified Sources Found:** {status_resp.findings_count}",
-            f"- **Total Token Usage:** {status_resp.total_tokens:,} tokens",
-        ])
+        lines.extend(
+            [
+                "---",
+                "",
+                "## Quality & Telemetry Appendix",
+                "",
+                f"- **Execution Status:** `{status_resp.status}`",
+                f"- **Total Agent Steps:** {status_resp.step_count}",
+                f"- **Verified Sources Found:** {status_resp.findings_count}",
+                f"- **Total Token Usage:** {status_resp.total_tokens:,} tokens",
+            ]
+        )
 
         if status_resp.cost_summary:
-            lines.append(f"- **Estimated Model Cost:** ${status_resp.cost_summary.total_cost_usd:.5f} USD")
+            lines.append(
+                f"- **Estimated Model Cost:** ${status_resp.cost_summary.total_cost_usd:.5f} USD"
+            )
 
         if status_resp.rag_score:
-            lines.extend([
-                f"- **RAG Verification Grade:** {status_resp.rag_score.grade or 'A'}",
-                f"- **Groundedness Score:** {getattr(status_resp.rag_score, 'groundedness_score', 0.0):.2f}",
-                f"- **Citation Precision:** {getattr(status_resp.rag_score, 'citation_precision', 0.0):.2f}",
-                f"- **Topic Coverage:** {getattr(status_resp.rag_score, 'coverage_score', 0.0):.2f}",
-            ])
+            lines.extend(
+                [
+                    f"- **RAG Verification Grade:** {status_resp.rag_score.grade or 'A'}",
+                    f"- **Groundedness Score:** {getattr(status_resp.rag_score, 'groundedness_score', 0.0):.2f}",
+                    f"- **Citation Precision:** {getattr(status_resp.rag_score, 'citation_precision', 0.0):.2f}",
+                    f"- **Topic Coverage:** {getattr(status_resp.rag_score, 'coverage_score', 0.0):.2f}",
+                ]
+            )
 
         lines.append("")
         return "\n".join(lines)
@@ -181,7 +191,9 @@ class ReportExportEngine:
         if report and report.sections:
             for sec in report.sections:
                 sec_title = html.escape(sec.title)
-                sec_content = html.escape(sec.content).replace("\n\n", "</p><p>").replace("\n", "<br>")
+                sec_content = (
+                    html.escape(sec.content).replace("\n\n", "</p><p>").replace("\n", "<br>")
+                )
                 sections_html.append(f"""
                 <section class="report-section">
                     <h2>{sec_title}</h2>
@@ -195,7 +207,11 @@ class ReportExportEngine:
             for cite in report.citations:
                 cid = html.escape(cite.citation_id)
                 claim = html.escape(cite.verified_claim)
-                quote = f'<blockquote>"{html.escape(cite.verbatim_quote)}"</blockquote>' if cite.verbatim_quote else ""
+                quote = (
+                    f'<blockquote>"{html.escape(cite.verbatim_quote)}"</blockquote>'
+                    if cite.verbatim_quote
+                    else ""
+                )
                 url = html.escape(cite.anchor_url or cite.source_url)
                 disp_url = html.escape(cite.source_url.split("?")[0])
                 if len(disp_url) > 60:
@@ -229,7 +245,11 @@ class ReportExportEngine:
         else:
             citations_table = ""
 
-        cost_val = f"${status_resp.cost_summary.total_cost_usd:.4f}" if status_resp.cost_summary else "$0.0000"
+        cost_val = (
+            f"${status_resp.cost_summary.total_cost_usd:.4f}"
+            if status_resp.cost_summary
+            else "$0.0000"
+        )
         tokens_val = f"{status_resp.total_tokens:,}"
 
         return f"""<!DOCTYPE html>
@@ -624,7 +644,11 @@ class ReportExportEngine:
             if status_resp.cost_summary
             else "N/A"
         )
-        grade_str = status_resp.rag_score.grade if status_resp.rag_score and status_resp.rag_score.grade else "A"
+        grade_str = (
+            status_resp.rag_score.grade
+            if status_resp.rag_score and status_resp.rag_score.grade
+            else "A"
+        )
         app_run = app_p.add_run(
             f"Execution Status: {status_resp.status.upper()}  |  "
             f"Verified Sources: {status_resp.findings_count}  |  "
@@ -660,7 +684,12 @@ class ReportExportEngine:
             content = await cls.export_pdf(status_resp)
             media_type = MEDIA_TYPES[ExportFormat.PDF]
             filename = f"research_report_{run_slug}.pdf"
-        elif normalized_format in (ExportFormat.MARKDOWN.value, ExportFormat.MD.value, "md", "markdown"):
+        elif normalized_format in (
+            ExportFormat.MARKDOWN.value,
+            ExportFormat.MD.value,
+            "md",
+            "markdown",
+        ):
             md_text = cls.export_markdown(status_resp)
             content = md_text.encode("utf-8")
             media_type = MEDIA_TYPES[ExportFormat.MARKDOWN]

@@ -109,7 +109,7 @@ class EvidenceCollector:
         # 2. Prioritize deep article/documentation URLs over root landing pages
         sorted_results = sorted(
             all_search_results,
-            key=lambda r: (0 if is_deep_url(r.url) else 1),
+            key=lambda r: 0 if is_deep_url(r.url) else 1,
         )
 
         unique_urls_to_scrape: list[str] = []

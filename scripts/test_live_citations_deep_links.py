@@ -8,8 +8,6 @@ Tests the citation verification architecture:
 """
 
 import asyncio
-import json
-import re
 import sys
 import time
 from urllib.parse import urlparse
@@ -21,8 +19,9 @@ if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
-import httpx
 from pathlib import Path
+
+import httpx
 
 # Ensure repo root is on sys.path
 _repo_root = Path(__file__).resolve().parent.parent
@@ -32,10 +31,8 @@ if str(_repo_root) not in sys.path:
 from src.agents.writer import create_text_fragment_url, write_report
 from src.core.llm import get_chat_model
 from src.schemas.finding import FindingRecord
-from src.schemas.report import Citation, ResearchReport
 from src.tools.evidence_collector import is_deep_url
 from src.validators.citation_validator import (
-    CitationValidator,
     validate_report_citations_async,
 )
 
@@ -224,7 +221,9 @@ async def test_dozens_of_sites():
     elapsed = time.time() - start_time
     print(f"\n[Probed {len(results)} distinct production endpoints in {elapsed:.2f}s]\n")
 
-    print(f"{'#':<3} | {'HTTP':<8} | {'Deep?':<6} | {'Latency':<8} | {'Anchor Fragment':<18} | {'Target URL'}")
+    print(
+        f"{'#':<3} | {'HTTP':<8} | {'Deep?':<6} | {'Latency':<8} | {'Anchor Fragment':<18} | {'Target URL'}"
+    )
     print("-" * 85)
 
     success_count = 0
@@ -249,9 +248,13 @@ async def test_dozens_of_sites():
         )
 
     print("-" * 85)
-    print(f"Summary: {success_count}/{len(results)} live sites reached (Success rate: {success_count/len(results)*100:.1f}%)")
+    print(
+        f"Summary: {success_count}/{len(results)} live sites reached (Success rate: {success_count / len(results) * 100:.1f}%)"
+    )
     print(f"Redirects dynamically resolved: {redirect_count}")
-    print(f"Browser W3C text fragments generated: {len([r for r in results if r['has_anchor']])}/{len(results)}")
+    print(
+        f"Browser W3C text fragments generated: {len([r for r in results if r['has_anchor']])}/{len(results)}"
+    )
 
 
 async def test_live_research_flow_citations():
@@ -326,9 +329,11 @@ async def test_live_research_flow_citations():
         print(f"\nCitation: {cite.citation_id}")
         print(f"  Source URL:    {cite.source_url}")
         print(f"  Anchor URL:    {cite.anchor_url}")
-        print(f"  HTTP Status:   {cite.http_status} {'OK' if cite.http_status == 200 else 'ERR/DEAD'}")
+        print(
+            f"  HTTP Status:   {cite.http_status} {'OK' if cite.http_status == 200 else 'ERR/DEAD'}"
+        )
         print(f"  Claim:         {cite.verified_claim}")
-        print(f"  Verbatim Quote: \"{cite.verbatim_quote}\"")
+        print(f'  Verbatim Quote: "{cite.verbatim_quote}"')
 
 
 async def main():

@@ -302,7 +302,9 @@ class ResearchJobService:
                                     sq.model_dump(mode="json") if hasattr(sq, "model_dump") else sq
                                     for sq in sub_questions
                                 ],
-                                "plan": plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan,
+                                "plan": plan.model_dump(mode="json")
+                                if hasattr(plan, "model_dump")
+                                else plan,
                                 "objective": getattr(plan, "objective", ""),
                             },
                         )
@@ -316,7 +318,9 @@ class ResearchJobService:
                         if not subq_id and new_findings and len(new_findings) > 0:
                             first_f = new_findings[0]
                             subq_id = getattr(first_f, "sub_question_id", None) or (
-                                first_f.get("sub_question_id") if isinstance(first_f, dict) else None
+                                first_f.get("sub_question_id")
+                                if isinstance(first_f, dict)
+                                else None
                             )
                         is_approved = node_output.get("is_approved", True)
                         is_revision = node_output.get("is_revision", False)
@@ -406,15 +410,20 @@ class ResearchJobService:
                 if final_snapshot and final_snapshot.values:
                     cvals = final_snapshot.values
                     # Keep existing ResearchReport if already instantiated; otherwise use canonical
-                    if cvals.get("report") and not isinstance(merged_state.get("report"), ResearchReport):
+                    if cvals.get("report") and not isinstance(
+                        merged_state.get("report"), ResearchReport
+                    ):
                         merged_state["report"] = cvals["report"]
                     if cvals.get("findings"):
                         existing_urls = {
-                            getattr(f, "source_url", None) or (f.get("source_url") if isinstance(f, dict) else None)
+                            getattr(f, "source_url", None)
+                            or (f.get("source_url") if isinstance(f, dict) else None)
                             for f in merged_state.get("findings", [])
                         }
                         for cf in cvals["findings"]:
-                            cf_url = getattr(cf, "source_url", None) or (cf.get("source_url") if isinstance(cf, dict) else None)
+                            cf_url = getattr(cf, "source_url", None) or (
+                                cf.get("source_url") if isinstance(cf, dict) else None
+                            )
                             if cf_url not in existing_urls:
                                 merged_state.setdefault("findings", []).append(cf)
                     if cvals.get("status"):
@@ -533,7 +542,9 @@ class ResearchJobService:
                         if citation_validation
                         else 0
                     ),
-                    "citation_validation": citation_validation.model_dump(mode="json") if citation_validation else None,
+                    "citation_validation": citation_validation.model_dump(mode="json")
+                    if citation_validation
+                    else None,
                     "cost_summary": cost_summary.model_dump(mode="json"),
                     "rag_score": rag_score.model_dump(mode="json"),
                     "spans_count": len(spans),
@@ -554,7 +565,11 @@ class ResearchJobService:
                 )
                 await self.run_manager.apply_ttl(run_id)
             except Exception as redis_exc:
-                logger.warning("Failed updating Redis during job cancellation", run_id=run_id, error=str(redis_exc))
+                logger.warning(
+                    "Failed updating Redis during job cancellation",
+                    run_id=run_id,
+                    error=str(redis_exc),
+                )
             try:
                 await self.broadcaster.broadcast(
                     run_id=run_id,
@@ -585,7 +600,11 @@ class ResearchJobService:
                     error_details=app_err.details,
                 )
             except Exception as redis_exc:
-                logger.warning("Failed updating run status in Redis on failure", run_id=run_id, error=str(redis_exc))
+                logger.warning(
+                    "Failed updating run status in Redis on failure",
+                    run_id=run_id,
+                    error=str(redis_exc),
+                )
 
             # Assemble failure audit log so /trace endpoint provides diagnostic info
             try:
@@ -610,7 +629,9 @@ class ResearchJobService:
             try:
                 await self.run_manager.apply_ttl(run_id)
             except Exception as ttl_exc:
-                logger.debug("Failed applying TTL in Redis on failure", run_id=run_id, error=str(ttl_exc))
+                logger.debug(
+                    "Failed applying TTL in Redis on failure", run_id=run_id, error=str(ttl_exc)
+                )
 
             try:
                 await self.broadcaster.broadcast(
@@ -625,7 +646,9 @@ class ResearchJobService:
                     },
                 )
             except Exception as broad_exc:
-                logger.warning("Failed broadcasting job_failed event", run_id=run_id, error=str(broad_exc))
+                logger.warning(
+                    "Failed broadcasting job_failed event", run_id=run_id, error=str(broad_exc)
+                )
 
     async def get_status(self, run_id: str) -> ResearchStatusResponse | None:
         """Fetch current status and report (if completed) for a given run ID."""
@@ -669,7 +692,9 @@ class ResearchJobService:
             try:
                 for s in raw_audit.get("steps", []):
                     if s.get("agent_name") == "researcher":
-                        findings_count = max(findings_count, s.get("output_data", {}).get("findings_count", 0))
+                        findings_count = max(
+                            findings_count, s.get("output_data", {}).get("findings_count", 0)
+                        )
             except Exception:
                 pass
 
@@ -704,9 +729,7 @@ class ResearchJobService:
             cost_summary=RunCostSummary.model_validate(cost_summary_dict)
             if cost_summary_dict
             else None,
-            rag_score=RAGQualityScore.model_validate(rag_score_dict)
-            if rag_score_dict
-            else None,
+            rag_score=RAGQualityScore.model_validate(rag_score_dict) if rag_score_dict else None,
             error_message=meta.get("error_message"),
             error_code=meta.get("error_code"),
             error_suggestion=meta.get("error_suggestion"),
@@ -821,9 +844,7 @@ class ResearchJobService:
         assert self.run_manager is not None
         return await self.run_manager.list_recent_runs(limit=limit, offset=offset)
 
-    async def wait_for_plan_decision(
-        self, run_id: str, timeout: float = 900.0
-    ) -> dict[str, Any]:
+    async def wait_for_plan_decision(self, run_id: str, timeout: float = 900.0) -> dict[str, Any]:
         """Block graph worker until human steering action is submitted or timeout occurs."""
         event = asyncio.Event()
         self._plan_approval_events[run_id] = event
@@ -844,7 +865,7 @@ class ResearchJobService:
 
                 try:
                     await asyncio.wait_for(event.wait(), timeout=0.5)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     pass
 
             logger.warning("Plan approval timed out; automatically continuing plan", run_id=run_id)

@@ -26,7 +26,6 @@ from src.graph.state import ResearchState
 from src.graph.supervisor import (
     route_after_consolidator,
     route_after_plan_gate,
-    route_after_planner,
 )
 from src.schemas.finding import FindingRecord
 from src.schemas.plan import SubQuestion
@@ -179,9 +178,15 @@ def build_research_graph(
 
             if run_manager and run_id:
                 try:
-                    plan_dict = plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan
+                    plan_dict = (
+                        plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan
+                    )
                     await run_manager.save_plan(run_id=run_id, plan_data=plan_dict)
-                    next_status = "planning" if (state.get("hitl_enabled") and not state.get("plan_approved")) else "researching"
+                    next_status = (
+                        "planning"
+                        if (state.get("hitl_enabled") and not state.get("plan_approved"))
+                        else "researching"
+                    )
                     await run_manager.update_run_status(
                         run_id=run_id,
                         status=next_status,
@@ -197,7 +202,11 @@ def build_research_graph(
                 except Exception as e:
                     logger.debug("Failed updating run_manager in planner", error=str(e))
 
-            next_status = "planning" if (state.get("hitl_enabled") and not state.get("plan_approved")) else "researching"
+            next_status = (
+                "planning"
+                if (state.get("hitl_enabled") and not state.get("plan_approved"))
+                else "researching"
+            )
             return {
                 "plan": plan,
                 "current_sub_question_index": 0,
@@ -250,6 +259,7 @@ def build_research_graph(
                 logger.debug("Failed updating run_manager in plan_gate", error=str(e))
 
         from src.api.events import broadcaster
+
         try:
             await broadcaster.broadcast(
                 run_id=run_id,
@@ -268,6 +278,7 @@ def build_research_graph(
             logger.debug("Failed broadcasting awaiting_plan_approval", error=str(e))
 
         from src.api.job_runner import job_service
+
         decision = await job_service.wait_for_plan_decision(run_id=run_id, timeout=900)
         action = decision.get("action", "approve")
 
@@ -278,9 +289,13 @@ def build_research_graph(
                 try:
                     await run_manager.save_plan(
                         run_id,
-                        mod_plan.model_dump(mode="json") if hasattr(mod_plan, "model_dump") else mod_plan,
+                        mod_plan.model_dump(mode="json")
+                        if hasattr(mod_plan, "model_dump")
+                        else mod_plan,
                     )
-                    await run_manager.update_run_status(run_id=run_id, status="researching", current_node="researcher")
+                    await run_manager.update_run_status(
+                        run_id=run_id, status="researching", current_node="researcher"
+                    )
                 except Exception as e:
                     logger.debug("Failed saving modified plan to run_manager", error=str(e))
             return {
@@ -292,10 +307,14 @@ def build_research_graph(
 
         elif action == "regenerate":
             feedback = decision.get("feedback", "")
-            logger.info("Human requested plan regeneration with feedback", run_id=run_id, feedback=feedback)
+            logger.info(
+                "Human requested plan regeneration with feedback", run_id=run_id, feedback=feedback
+            )
             if run_manager and run_id:
                 try:
-                    await run_manager.update_run_status(run_id=run_id, status="planning", current_node="planner")
+                    await run_manager.update_run_status(
+                        run_id=run_id, status="planning", current_node="planner"
+                    )
                 except Exception as e:
                     logger.debug("Failed updating run status on regeneration", error=str(e))
             return {
@@ -308,7 +327,9 @@ def build_research_graph(
             logger.warning("Human rejected research plan; cancelling execution", run_id=run_id)
             if run_manager and run_id:
                 try:
-                    await run_manager.update_run_status(run_id=run_id, status="cancelled", error_message="Plan rejected by user.")
+                    await run_manager.update_run_status(
+                        run_id=run_id, status="cancelled", error_message="Plan rejected by user."
+                    )
                 except Exception as e:
                     logger.debug("Failed updating run status on rejection", error=str(e))
             return {
@@ -316,11 +337,13 @@ def build_research_graph(
                 "error_message": "Plan rejected by user.",
             }
 
-        else: # approve
+        else:  # approve
             logger.info("Human approved research plan as-is", run_id=run_id)
             if run_manager and run_id:
                 try:
-                    await run_manager.update_run_status(run_id=run_id, status="researching", current_node="researcher")
+                    await run_manager.update_run_status(
+                        run_id=run_id, status="researching", current_node="researcher"
+                    )
                 except Exception as e:
                     logger.debug("Failed updating run status on approval", error=str(e))
             return {
@@ -330,7 +353,11 @@ def build_research_graph(
             }
 
     async def researcher_node(payload: Any) -> dict[str, Any]:
-        raw_sq = payload.get("sub_question") if isinstance(payload, dict) else getattr(payload, "sub_question", None)
+        raw_sq = (
+            payload.get("sub_question")
+            if isinstance(payload, dict)
+            else getattr(payload, "sub_question", None)
+        )
         if raw_sq:
             if isinstance(raw_sq, dict):
                 sub_question = SubQuestion.model_validate(_unwrap_lc(raw_sq))
@@ -371,11 +398,7 @@ def build_research_graph(
         collector = evidence_collector
         is_mock_llm = "mock" in type(llm).__name__.lower()
         if collector is None:
-            if (
-                is_mock_llm
-                or settings.LLM_PROVIDER == "mock"
-                or settings.SEARCH_ENGINE == "mock"
-            ):
+            if is_mock_llm or settings.LLM_PROVIDER == "mock" or settings.SEARCH_ENGINE == "mock":
                 from src.tools.search import MockSearchClient, MultiSearchClient
 
                 collector = EvidenceCollector(
@@ -584,9 +607,7 @@ def build_research_graph(
         if not evaluation.is_approved:
             elapsed = (time.time() - start_time) if start_time > 0 else 0.0
             wall_limit = (
-                float(max_wall_clock)
-                if max_wall_clock
-                else float(settings.MAX_WALL_CLOCK_SECONDS)
+                float(max_wall_clock) if max_wall_clock else float(settings.MAX_WALL_CLOCK_SECONDS)
             )
             # If less than 20 seconds remain before hard ceiling, skip revision pass
             if start_time > 0 and (elapsed + 20.0 >= wall_limit):
@@ -600,7 +621,9 @@ def build_research_graph(
                 logger.info(
                     "Worker executing single permitted revision", sub_question_id=sub_question.id
                 )
-                rev_queries = list(queries) + [f"{sub_question.question} {evaluation.feedback[:60]}"]
+                rev_queries = list(queries) + [
+                    f"{sub_question.question} {evaluation.feedback[:60]}"
+                ]
                 rev_t0 = time.time()
                 rev_evidence_res = await collector.collect_evidence_for_queries(
                     queries=rev_queries,
@@ -804,11 +827,7 @@ def build_research_graph(
         collector = evidence_collector
         is_mock_llm = "mock" in type(llm).__name__.lower()
         if collector is None:
-            if (
-                is_mock_llm
-                or settings.LLM_PROVIDER == "mock"
-                or settings.SEARCH_ENGINE == "mock"
-            ):
+            if is_mock_llm or settings.LLM_PROVIDER == "mock" or settings.SEARCH_ENGINE == "mock":
                 from src.tools.search import MockSearchClient, MultiSearchClient
 
                 collector = EvidenceCollector(
@@ -911,9 +930,7 @@ def build_research_graph(
             tool_calls=tool_records,
         )
 
-        remaining_unresolved = [
-            sq.id for sq in unanswered_subqs if sq.id != target_subq.id
-        ]
+        remaining_unresolved = [sq.id for sq in unanswered_subqs if sq.id != target_subq.id]
         if not new_findings:
             remaining_unresolved.append(target_subq.id)
 
@@ -943,7 +960,9 @@ def build_research_graph(
         run_id = state.get("run_id", "")
         findings = _normalize_findings(state.get("findings", []))
         focus_mode = state.get("focus_mode", "general")
-        logger.info("Executing Writer node", step=step, findings_count=len(findings), focus_mode=focus_mode)
+        logger.info(
+            "Executing Writer node", step=step, findings_count=len(findings), focus_mode=focus_mode
+        )
 
         writer_model = (
             getattr(active_writer_llm, "model_name", None)
@@ -995,7 +1014,9 @@ def build_research_graph(
                 )
 
             cum_tokens = _normalize_tokens(state.get("total_tokens"))
-            cum_tokens.add(tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd)
+            cum_tokens.add(
+                tokens.prompt_tokens, tokens.completion_tokens, tokens.estimated_cost_usd
+            )
 
             if run_manager and run_id:
                 try:

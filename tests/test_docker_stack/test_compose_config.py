@@ -1,8 +1,8 @@
 """Tests verifying Docker Compose stack topology, environment configurations, and Dockerfile healthcheck."""
 
 from pathlib import Path
+
 import yaml
-import pytest
 
 
 def test_dockerfile_exists_and_hardened():
@@ -35,8 +35,8 @@ def test_docker_compose_topology_and_services():
     """Verify docker-compose.yml defines redis, api, and decoupled worker with health checks."""
     compose_path = Path("docker-compose.yml")
     assert compose_path.exists(), "docker-compose.yml must exist"
-    
-    with open(compose_path, "r", encoding="utf-8") as f:
+
+    with open(compose_path, encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     services = config.get("services", {})

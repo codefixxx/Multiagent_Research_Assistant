@@ -52,8 +52,12 @@ class CrashableSimulationLLM(MockChatModel):
             if schema == ResearcherOutput:
                 self.researcher_runs += 1
                 if self.should_crash and self.researcher_runs == 2:
-                    print("\n[CHAOS SIMULATION] *** SIMULATING PROCESS FAILURE AT SUB-QUESTION 2 ***\n")
-                    raise SimulatedWorkerCrash("Process killed: SIGKILL sent to worker midway through research.")
+                    print(
+                        "\n[CHAOS SIMULATION] *** SIMULATING PROCESS FAILURE AT SUB-QUESTION 2 ***\n"
+                    )
+                    raise SimulatedWorkerCrash(
+                        "Process killed: SIGKILL sent to worker midway through research."
+                    )
                 return await base_runnable.ainvoke(messages)
 
             if schema == ReviewEvaluation:
@@ -150,7 +154,9 @@ async def main() -> None:
     resumed_result = await graph_v2.ainvoke(None, config=config)
 
     print("\n[6] Resumption Complete!")
-    print(f"    - Worker 2 Planner Runs:    {llm_v2.planner_runs} (0 indicates Planner was SKIPPED)")
+    print(
+        f"    - Worker 2 Planner Runs:    {llm_v2.planner_runs} (0 indicates Planner was SKIPPED)"
+    )
     print(f"    - Final Graph Status:       {resumed_result['status']}")
     print(f"    - Final Findings Count:     {len(resumed_result['findings'])}")
     print(f"    - Final Report Title:       {resumed_result['report'].title}")

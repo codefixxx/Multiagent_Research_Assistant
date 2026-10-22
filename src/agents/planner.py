@@ -90,7 +90,7 @@ async def plan_research(
         human_content += (
             f"\n\nHUMAN STEERING GUIDANCE & REVISION INSTRUCTIONS:\n"
             f"The human reviewer examined the previous plan and requested these specific adjustments:\n"
-            f"\"\"\"\n{steering_feedback.strip()}\n\"\"\"\n"
+            f'"""\n{steering_feedback.strip()}\n"""\n'
             f"You MUST follow these human steering instructions when formulating your new sub-questions."
         )
 
@@ -109,9 +109,7 @@ async def plan_research(
             raw_result = await structured_llm.ainvoke(formatted_messages)
     except Exception as exc:
         resolved_model = (
-            getattr(model, "model_name", None)
-            or getattr(model, "model", None)
-            or str(model)
+            getattr(model, "model_name", None) or getattr(model, "model", None) or str(model)
         )
         classified = classify_error(exc, model_name=str(resolved_model), node="planner")
         logger.error(
@@ -133,13 +131,9 @@ async def plan_research(
         token_usage = TokenUsage()
     else:
         resolved_model = (
-            getattr(model, "model_name", None)
-            or getattr(model, "model", None)
-            or str(model)
+            getattr(model, "model_name", None) or getattr(model, "model", None) or str(model)
         )
-        parsing_err = (
-            raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
-        )
+        parsing_err = raw_result.get("parsing_error") if isinstance(raw_result, dict) else None
         from src.core.exceptions import SchemaValidationError
 
         err_details: dict[str, Any] = {"model": str(resolved_model)}
@@ -172,4 +166,3 @@ async def plan_research(
     )
 
     return parsed_plan, token_usage, timer.elapsed_ms
-

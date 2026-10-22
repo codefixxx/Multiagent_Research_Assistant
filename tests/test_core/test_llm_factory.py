@@ -82,4 +82,3 @@ def test_missing_api_key_raises_configuration_error():
     with pytest.raises(LLMConfigurationError) as exc_info:
         get_chat_model(provider="openai", api_key="")
     assert "OPENAI_API_KEY is not configured" in str(exc_info.value)
-

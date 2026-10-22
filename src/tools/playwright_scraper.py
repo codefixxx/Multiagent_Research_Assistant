@@ -1,6 +1,5 @@
 """Headless Playwright stealth browser client for Tier 3 web scraping fallback."""
 
-
 from src.config import settings
 from src.core.logger import logger
 from src.schemas.finding import ExtractionStatus
@@ -28,9 +27,7 @@ class PlaywrightScraperClient:
     ) -> None:
         self.timeout = timeout or settings.PLAYWRIGHT_TIMEOUT_SECONDS
         self.max_words = max_words or settings.SCRAPER_MAX_WORDS_PER_PAGE
-        self.headless = (
-            headless if headless is not None else settings.PLAYWRIGHT_HEADLESS
-        )
+        self.headless = headless if headless is not None else settings.PLAYWRIGHT_HEADLESS
         self.user_agent = user_agent or (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -45,7 +42,9 @@ class PlaywrightScraperClient:
             return text, total_words
 
         truncated = " ".join(words[: self.max_words])
-        notice = f"\n\n[Content truncated at {self.max_words:,} words (total: {total_words:,} words)]"
+        notice = (
+            f"\n\n[Content truncated at {self.max_words:,} words (total: {total_words:,} words)]"
+        )
         return truncated + notice, self.max_words
 
     def _is_cloudflare_challenge(self, title: str, html: str) -> bool:

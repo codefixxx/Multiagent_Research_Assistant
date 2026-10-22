@@ -105,7 +105,9 @@ class ResearchWorker:
             logger.warning("Received invalid job data missing run_id", job_data=job_data)
             return
 
-        logger.info("Worker picked up research job from queue", worker_id=self.worker_id, run_id=run_id)
+        logger.info(
+            "Worker picked up research job from queue", worker_id=self.worker_id, run_id=run_id
+        )
 
         try:
             request = ResearchRequest.model_validate(req_dict)
@@ -113,7 +115,11 @@ class ResearchWorker:
             # Execute the research graph with all telemetry, persistence, and event emissions
             llm_to_use = getattr(self.job_service, "default_llm", None)
             await self.job_service._execute_job(run_id=run_id, request=request, llm=llm_to_use)
-            logger.info("Worker successfully completed research job", worker_id=self.worker_id, run_id=run_id)
+            logger.info(
+                "Worker successfully completed research job",
+                worker_id=self.worker_id,
+                run_id=run_id,
+            )
         except Exception as e:
             app_err = classify_error(e)
             logger.error(
@@ -218,7 +224,9 @@ def main() -> None:
     """CLI entrypoint parsing options and starting worker daemon."""
     parser = argparse.ArgumentParser(description="Multi-Agent Research Assistant Decoupled Worker")
     parser.add_argument("--concurrency", type=int, default=None, help="Worker concurrency limit")
-    parser.add_argument("--worker-id", type=str, default=None, help="Custom identifier for this worker node")
+    parser.add_argument(
+        "--worker-id", type=str, default=None, help="Custom identifier for this worker node"
+    )
     args = parser.parse_args()
 
     run_worker(concurrency=args.concurrency, worker_id=args.worker_id)

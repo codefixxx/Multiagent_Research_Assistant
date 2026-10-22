@@ -75,7 +75,8 @@ class LLMConfigurationError(ConfigurationError):
             message=message,
             code=code,
             status_code=status_code,
-            suggestion=suggestion or "Configure the required API key in .env or the Settings dialog.",
+            suggestion=suggestion
+            or "Configure the required API key in .env or the Settings dialog.",
             details=details,
         )
 
@@ -95,7 +96,8 @@ class ModelError(ApplicationError):
             message=message,
             code=code,
             status_code=status_code,
-            suggestion=suggestion or "Check the model configuration or try switching to another provider.",
+            suggestion=suggestion
+            or "Check the model configuration or try switching to another provider.",
             details=details,
         )
 
@@ -113,7 +115,10 @@ class AuthenticationError(ModelError):
         details: dict[str, Any] | None = None,
     ) -> None:
         prov_name = (provider or "the model provider").capitalize()
-        sugg = suggestion or f"Please verify and update your {prov_name} API key in Settings or .env file."
+        sugg = (
+            suggestion
+            or f"Please verify and update your {prov_name} API key in Settings or .env file."
+        )
         d = dict(details or {})
         if provider:
             d["provider"] = provider
@@ -422,7 +427,11 @@ def classify_error(
             provider=inferred_provider,
             code="INVALID_API_KEY",
             suggestion=f"Please verify and configure a valid {prov_title} API key in Settings or .env file.",
-            details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
+            details={
+                "original_error": err_str,
+                "exception_type": exc_type_name,
+                "model": model_name,
+            },
         )
 
     # 2. Non-existent or unsupported Model Name
@@ -450,7 +459,9 @@ def classify_error(
         elif inferred_provider == "anthropic":
             sugg = f"Model '{m_display}' was not found. Recommended Anthropic models: 'claude-3-5-sonnet-20241022', 'claude-3-haiku-20240307'."
         else:
-            sugg = f"Verify the spelling of '{m_display}' and ensure it is supported by {prov_title}."
+            sugg = (
+                f"Verify the spelling of '{m_display}' and ensure it is supported by {prov_title}."
+            )
 
         return InvalidModelError(
             message=f"The chosen model '{m_display}' was not found or is not supported by {prov_title}.",
@@ -480,7 +491,11 @@ def classify_error(
             provider=inferred_provider,
             code="RATE_LIMIT_EXCEEDED",
             suggestion=f"You have reached your request rate limit or token quota on {prov_title}. Please wait a moment before retrying or check your quota balance.",
-            details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
+            details={
+                "original_error": err_str,
+                "exception_type": exc_type_name,
+                "model": model_name,
+            },
         )
 
     # 4. Service Unavailable / Outage / Server Errors (5xx, timeouts)
@@ -507,7 +522,11 @@ def classify_error(
             provider=inferred_provider,
             code="PROVIDER_UNAVAILABLE",
             suggestion=f"{prov_title} servers might be experiencing heavy load or downtime. Please try again shortly or switch to a different model.",
-            details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
+            details={
+                "original_error": err_str,
+                "exception_type": exc_type_name,
+                "model": model_name,
+            },
         )
 
     # 5. Context Window / Maximum Token Limit Exceeded
@@ -532,7 +551,11 @@ def classify_error(
             model_name=model_name,
             code="CONTEXT_LENGTH_EXCEEDED",
             suggestion=f"The research context exceeds {m_display}'s context window. Switch to a higher-capacity model (e.g. Gemini 2.5 Flash with 1M tokens) or reduce search depth.",
-            details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
+            details={
+                "original_error": err_str,
+                "exception_type": exc_type_name,
+                "model": model_name,
+            },
         )
 
     # 6. Content Policy / Safety Moderation Blocked
@@ -556,7 +579,11 @@ def classify_error(
             provider=inferred_provider,
             code="CONTENT_MODERATION_BLOCKED",
             suggestion="Your research query or retrieved web sources triggered provider safety filters. Try rephrasing your query or choosing a different model.",
-            details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name},
+            details={
+                "original_error": err_str,
+                "exception_type": exc_type_name,
+                "model": model_name,
+            },
         )
 
     # 7. Schema Validation / Structured Output Parsing Error
@@ -572,14 +599,25 @@ def classify_error(
         "failed to produce compliant structured output",
     ]
     if any(ind in err_lower for ind in schema_indicators) or any(
-        t in exc_type_name for t in ("OutputParserException", "ValidationError", "SchemaValidationError", "JSONDecodeError")
+        t in exc_type_name
+        for t in (
+            "OutputParserException",
+            "ValidationError",
+            "SchemaValidationError",
+            "JSONDecodeError",
+        )
     ):
         return SchemaValidationError(
             message=f"Structured output schema validation failed: {err_str[:200]}",
             node=node,
             code="SCHEMA_VALIDATION_ERROR",
             suggestion="The model failed to produce valid structured JSON. Consider selecting a model with stronger structured reasoning (e.g., Gemini 2.5 Flash or GPT-4o-mini).",
-            details={"original_error": err_str, "exception_type": exc_type_name, "node": node, "model": model_name},
+            details={
+                "original_error": err_str,
+                "exception_type": exc_type_name,
+                "node": node,
+                "model": model_name,
+            },
         )
 
     # 8. Tool / Scraper / Search failure
@@ -598,6 +636,10 @@ def classify_error(
         node=node,
         code="PIPELINE_ERROR",
         suggestion="An unexpected error occurred during execution. Please check application logs for details.",
-        details={"original_error": err_str, "exception_type": exc_type_name, "model": model_name, "provider": provider},
+        details={
+            "original_error": err_str,
+            "exception_type": exc_type_name,
+            "model": model_name,
+            "provider": provider,
+        },
     )
-
