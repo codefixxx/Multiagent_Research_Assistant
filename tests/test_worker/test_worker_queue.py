@@ -55,8 +55,15 @@ async def test_job_submission_returns_202_accepted_immediately_under_50ms(client
     q_len = await job_service.queue.get_queue_length()
     assert q_len >= 1
 
-    # Cleanup queue
+    # Cleanup queue and test run metadata
     await job_service.queue.clear_queue()
+    if "run_id" in data:
+        try:
+            r = await get_redis_client()
+            await r.zrem("research:runs:index", data["run_id"])
+            await r.delete(f"research:run:{data['run_id']}:meta")
+        except Exception:
+            pass
 
 
 @pytest.mark.asyncio

@@ -289,11 +289,12 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
 
         {/* Source Verification Audit Ledger */}
         {(() => {
+          const isFinished = jobData?.status === 'completed' || jobData?.status === 'budget_exceeded';
           const isCancelled = jobData?.status === 'cancelled';
-          const grade = isCancelled ? null : (ragScore?.grade || ragScore?.composite_grade || null);
-          const groundednessPct = isCancelled ? null : (ragScore ? Math.round((ragScore.groundedness_score ?? 0) * 100) : null);
-          const precisionPct = isCancelled ? null : (ragScore ? Math.round((ragScore.citation_precision ?? ragScore.citation_precision_score ?? 0) * 100) : null);
-          const coveragePct = isCancelled ? null : (ragScore ? Math.round((ragScore.coverage_score ?? ragScore.subquestion_coverage_score ?? 0) * 100) : null);
+          const grade = isFinished ? (ragScore?.grade || ragScore?.composite_grade || null) : null;
+          const groundednessPct = isFinished && ragScore ? Math.round((ragScore.groundedness_score ?? 0) * 100) : null;
+          const precisionPct = isFinished && ragScore ? Math.round((ragScore.citation_precision ?? ragScore.citation_precision_score ?? 0) * 100) : null;
+          const coveragePct = isFinished && ragScore ? Math.round((ragScore.coverage_score ?? ragScore.subquestion_coverage_score ?? 0) * 100) : null;
 
           return (
             <div className="p-4.5 rounded-md bg-[#131217] border border-[#222224] space-y-3.5">

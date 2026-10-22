@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -713,6 +714,33 @@ class ResearchJobService:
 
         status = meta.get("status", "planning")
         current_node = meta.get("current_node")
+
+        # Reconcile stale/interrupted jobs hanging in planning or queued without active background execution
+        if status in ("planning", "queued") and run_id not in self._active_tasks:
+            created_at_str = meta.get("updated_at") or meta.get("created_at")
+            if created_at_str:
+                try:
+                    created_dt = datetime.fromisoformat(created_at_str)
+                    if created_dt.tzinfo is None:
+                        created_dt = created_dt.replace(tzinfo=UTC)
+                    age_seconds = (datetime.now(UTC) - created_dt).total_seconds()
+                    if age_seconds > 180:
+                        status = "failed"
+                        meta["status"] = "failed"
+                        meta["error_message"] = "Research planning was interrupted or timed out."
+                        meta["error_code"] = "PLANNING_TIMEOUT_OR_INTERRUPTED"
+                        meta["error_suggestion"] = (
+                            "Click 'Retry Investigation' to dispatch this query again."
+                        )
+                        await self.run_manager.update_run_status(
+                            run_id=run_id,
+                            status="failed",
+                            error_message=meta["error_message"],
+                            error_code=meta["error_code"],
+                            error_suggestion=meta["error_suggestion"],
+                        )
+                except Exception:
+                    pass
 
         # Estimate progress percentage based on node lifecycle
         progress_pct = 10

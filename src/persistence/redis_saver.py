@@ -324,6 +324,36 @@ class RedisRunManager:
                 # Check whether finalized report artifact exists
                 has_report = await self.redis.exists(self._report_key(run_id))
                 meta["has_report"] = bool(has_report)
+
+                # Reconcile stale/interrupted jobs hanging in planning or queued
+                status = meta.get("status")
+                if status in ("planning", "queued") and not meta["has_report"]:
+                    created_at_str = meta.get("updated_at") or meta.get("created_at")
+                    if created_at_str:
+                        try:
+                            created_dt = datetime.fromisoformat(created_at_str)
+                            if created_dt.tzinfo is None:
+                                created_dt = created_dt.replace(tzinfo=UTC)
+                            age_seconds = (datetime.now(UTC) - created_dt).total_seconds()
+                            if age_seconds > 180:
+                                meta["status"] = "failed"
+                                meta["error_message"] = (
+                                    "Research planning was interrupted or timed out."
+                                )
+                                meta["error_code"] = "PLANNING_TIMEOUT_OR_INTERRUPTED"
+                                meta["error_suggestion"] = (
+                                    "Please click 'Open in Studio' and click 'Retry Investigation' to restart."
+                                )
+                                await self.update_run_status(
+                                    run_id=run_id,
+                                    status="failed",
+                                    error_message=meta["error_message"],
+                                    error_code=meta["error_code"],
+                                    error_suggestion=meta["error_suggestion"],
+                                )
+                        except Exception:
+                            pass
+
                 runs.append(meta)
             else:
                 # Remove stale/expired ID from index

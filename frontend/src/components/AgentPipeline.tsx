@@ -19,8 +19,20 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
   status = 'idle'
 }) => {
   const isCancelled = status === 'cancelled';
-  const isResearching = !isCancelled && workers.some(w => w.status === 'active' || w.status === 'revision');
-  const isResearchDone = !isCancelled && workers.length > 0 && workers.every(w => w.status === 'completed');
+  const isResearching = !isCancelled && (
+    status === 'researching' ||
+    workers.some(w => w.status === 'active' || w.status === 'revision')
+  );
+  const isResearchDone = !isCancelled && (
+    (workers.length > 0 && workers.every(w => w.status === 'completed')) ||
+    consolidatorState === 'active' ||
+    consolidatorState === 'completed' ||
+    writerState === 'active' ||
+    writerState === 'completed' ||
+    status === 'writing' ||
+    status === 'completed' ||
+    status === 'budget_exceeded'
+  );
 
   const steps = [
     {
@@ -40,6 +52,8 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
         ? 'Cancelled before retrieval'
         : workers.length > 0
         ? `${workers.length} parallel inquiries`
+        : isResearchDone
+        ? 'Web evidence gathered'
         : 'Gathering web sources',
       state: isCancelled ? 'cancelled' : isResearching ? 'active' : isResearchDone ? 'completed' : 'waiting',
     },

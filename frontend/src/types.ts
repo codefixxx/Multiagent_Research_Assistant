@@ -1,5 +1,6 @@
 export type JobStatus = 
   | 'idle'
+  | 'queued'
   | 'pending'
   | 'planning'
   | 'awaiting_approval'

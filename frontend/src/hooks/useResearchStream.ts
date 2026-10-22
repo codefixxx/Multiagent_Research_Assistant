@@ -616,38 +616,84 @@ export function useResearchStream() {
         window.history.replaceState({}, '', '?run_id=' + runId);
       } catch {}
 
+      // Cleanly reset previous run transient state to prevent bleed across runs
+      setLogs([]);
+      setActiveSpans([]);
+      setJobData(null);
+      setSubQuestions([]);
+      setFindingsCount(0);
+      setCitationsCount(0);
+      setCostSummary(null);
+      setRagScore(null);
+      setPlannerState('waiting');
+      setConsolidatorState('waiting');
+      setWriterState('waiting');
+
       const res = await fetch(`/research/${runId}`);
       if (!res.ok) return;
       const data: ResearchJobData = await res.json();
       if (data && data.run_id) {
         setJobData(data);
         setStatus(data.status);
-        if (data.findings_count) setFindingsCount(data.findings_count);
-        if (data.citations_count) setCitationsCount(data.citations_count);
-        if (data.cost_summary) setCostSummary(data.cost_summary);
-        if (data.rag_score) setRagScore(data.rag_score);
+        setFindingsCount(data.findings_count || 0);
+        setCitationsCount(data.citations_count || 0);
+        setCostSummary(data.cost_summary || null);
+        setRagScore(data.rag_score || null);
+
+        // Map sub-questions from plan if available
+        if (data.plan?.sub_questions && Array.isArray(data.plan.sub_questions)) {
+          const isDone = data.status === 'completed' || data.status === 'budget_exceeded' || data.status === 'writing';
+          const isCancelled = data.status === 'cancelled';
+          const isAwaiting = data.status === 'awaiting_approval';
+          setSubQuestions(data.plan.sub_questions.map((q, idx) => ({
+            id: q.id || `subq_${idx + 1}`,
+            text: q.question,
+            status: isDone ? 'completed' : isCancelled ? 'waiting' : isAwaiting ? 'waiting' : 'active',
+            findingsCount: 0
+          })));
+        }
+
         if (data.status === 'completed' || data.status === 'budget_exceeded') {
           setPlannerState('completed');
           setConsolidatorState('completed');
           setWriterState('completed');
           loadTrace(runId);
+        } else if (data.status === 'writing') {
+          setPlannerState('completed');
+          setConsolidatorState('completed');
+          setWriterState('active');
+          connectSSE(runId);
+          startPolling(runId);
+          startTimer();
+        } else if (data.status === 'researching') {
+          setPlannerState('completed');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          connectSSE(runId);
+          startPolling(runId);
+          startTimer();
+        } else if (data.status === 'awaiting_approval') {
+          setPlannerState('active');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          loadTrace(runId);
+        } else if (data.status === 'planning' || data.status === 'queued') {
+          setPlannerState('active');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          connectSSE(runId);
+          startPolling(runId);
+          startTimer();
         } else if (data.status === 'cancelled') {
           setPlannerState('completed');
           setConsolidatorState('waiting');
           setWriterState('waiting');
-          if (data.plan?.sub_questions) {
-            setSubQuestions(data.plan.sub_questions.map((q, idx) => ({
-              id: q.id || `subq_${idx + 1}`,
-              text: q.question,
-              status: 'waiting',
-              findingsCount: 0
-            })));
-          }
           loadTrace(runId);
-        } else if (data.status !== 'failed') {
-          connectSSE(runId);
-          startPolling(runId);
-          startTimer();
+        } else if (data.status === 'failed') {
+          setPlannerState('waiting');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          loadTrace(runId);
         }
       }
     } catch (e) {
