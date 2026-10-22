@@ -191,3 +191,68 @@ def zero_out_secrets(target: Any) -> None:
                     setattr(target, field_name, None)
                 except Exception:
                     pass
+
+
+def sanitize_text_secrets(text: str, custom_secrets: list[str] | None = None) -> str:
+    """Scrub known API key patterns and custom secrets from text strings."""
+    if not text or not isinstance(text, str):
+        return text
+    from src.core.logger import redact_secrets_text
+
+    scrubbed = redact_secrets_text(text)
+    if custom_secrets:
+        for secret in custom_secrets:
+            if secret and isinstance(secret, str) and len(secret) >= 8:
+                scrubbed = scrubbed.replace(secret, "[REDACTED_API_KEY]")
+    return scrubbed
+
+
+def sanitize_report_secrets(report: Any, custom_secrets: list[str] | None = None) -> Any:
+    """Recursively scrub secrets from all fields of a synthesized research report."""
+    if report is None:
+        return None
+
+    if hasattr(report, "title") and report.title:
+        report.title = sanitize_text_secrets(report.title, custom_secrets)
+    if hasattr(report, "executive_summary") and report.executive_summary:
+        report.executive_summary = sanitize_text_secrets(report.executive_summary, custom_secrets)
+    if hasattr(report, "markdown_output") and report.markdown_output:
+        report.markdown_output = sanitize_text_secrets(report.markdown_output, custom_secrets)
+
+    if hasattr(report, "sections") and report.sections:
+        for sec in report.sections:
+            if hasattr(sec, "title") and sec.title:
+                sec.title = sanitize_text_secrets(sec.title, custom_secrets)
+            if hasattr(sec, "content") and sec.content:
+                sec.content = sanitize_text_secrets(sec.content, custom_secrets)
+
+    if hasattr(report, "citations") and report.citations:
+        for cite in report.citations:
+            for field in (
+                "verified_claim",
+                "claim",
+                "verbatim_quote",
+                "quote",
+                "source_url",
+                "url",
+                "anchor_url",
+            ):
+                if hasattr(cite, field) and getattr(cite, field):
+                    setattr(
+                        cite, field, sanitize_text_secrets(getattr(cite, field), custom_secrets)
+                    )
+
+    return report
+
+
+def sanitize_findings_secrets(
+    findings: list[Any], custom_secrets: list[str] | None = None
+) -> list[Any]:
+    """Scrub secrets from extracted finding records."""
+    if not findings:
+        return findings
+    for f in findings:
+        for field in ("claim", "snippet", "verbatim_quote", "quote", "source_url"):
+            if hasattr(f, field) and getattr(f, field):
+                setattr(f, field, sanitize_text_secrets(getattr(f, field), custom_secrets))
+    return findings

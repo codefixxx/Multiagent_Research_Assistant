@@ -11,7 +11,7 @@ from src.config import settings
 
 # Regex patterns identifying API keys and sensitive tokens across supported providers
 SECRET_PATTERNS = [
-    re.compile(r"AIza[0-9A-Za-z\-_]{30,}"),  # Google Gemini / Google Cloud
+    re.compile(r"AIza[0-9A-Za-z\-_]{20,}"),  # Google Gemini / Google Cloud
     re.compile(r"sk-(?:proj-)?[a-zA-Z0-9_\-]{20,}"),  # OpenAI
     re.compile(r"sk-ant-[a-zA-Z0-9_\-]{20,}"),  # Anthropic Claude
     re.compile(r"gsk_[a-zA-Z0-9_\-]{20,}"),  # Groq Cloud

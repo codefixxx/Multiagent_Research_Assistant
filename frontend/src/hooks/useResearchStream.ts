@@ -498,7 +498,17 @@ export function useResearchStream() {
 
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
-        const errMsg = errJson.error || errJson.detail || errJson.message || `Server returned HTTP ${res.status}`;
+        let errMsg = errJson.error || errJson.message || '';
+        if (!errMsg && errJson.detail) {
+          if (Array.isArray(errJson.detail)) {
+            errMsg = errJson.detail.map((d: any) => d.msg || JSON.stringify(d)).join('; ');
+          } else {
+            errMsg = String(errJson.detail);
+          }
+        }
+        if (!errMsg) {
+          errMsg = `Server returned HTTP ${res.status}`;
+        }
         const suggestion = errJson.suggestion || '';
         const code = errJson.code || `HTTP_${res.status}`;
         setJobData({

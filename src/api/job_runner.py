@@ -520,6 +520,17 @@ class ResearchJobService:
                 )
                 final_report = citation_validation.sanitized_report
 
+            # Egress Guardrail: Scrub any secrets from final report and findings before persistence or broadcast
+            from src.core.security import sanitize_findings_secrets, sanitize_report_secrets
+
+            active_secrets = (
+                [v for v in user_keys.values() if v and isinstance(v, str)]
+                if "user_keys" in locals() and isinstance(user_keys, dict)
+                else None
+            )
+            final_report = sanitize_report_secrets(final_report, custom_secrets=active_secrets)
+            findings_obj_list = sanitize_findings_secrets(findings_obj_list, custom_secrets=active_secrets)
+
             # Persist Report in Redis
             if final_report is not None:
                 report_dict: dict[str, Any] = final_report.model_dump(mode="json")

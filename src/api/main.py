@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -71,6 +72,31 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
             "status_code": exc.status_code,
             "suggestion": "Verify your request parameters or URL path.",
             "details": {},
+        },
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    errors = exc.errors()
+    msg = "; ".join(f"{'.'.join(str(loc_part) for loc_part in err.get('loc', []))}: {err.get('msg', '')}" for err in errors)
+    logger.warning("Request validation failed", path=request.url.path, validation_message=msg)
+    safe_errors = [
+        {
+            "loc": [str(x) for x in err.get("loc", [])],
+            "msg": str(err.get("msg", "")),
+            "type": str(err.get("type", "")),
+        }
+        for err in errors
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": f"Validation Error: {msg}",
+            "code": "VALIDATION_ERROR",
+            "status_code": 422,
+            "suggestion": "Check input field formats (e.g., API keys must be 10-200 alphanumeric chars without control characters).",
+            "details": safe_errors,
         },
     )
 

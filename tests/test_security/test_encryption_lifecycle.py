@@ -120,7 +120,7 @@ def test_zero_out_secrets():
     zero_out_secrets(sensitive_dict)
     assert len(sensitive_dict) == 0
 
-    cfg = APIKeysConfig(gemini="AIzaSySecret", openai="sk-secret")
+    cfg = APIKeysConfig(gemini="AIzaSySecret12345", openai="sk-secret12345")
     assert cfg.gemini is not None
     zero_out_secrets(cfg)
     assert cfg.gemini is None

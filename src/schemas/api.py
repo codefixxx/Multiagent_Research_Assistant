@@ -1,9 +1,10 @@
 """Pydantic request and response schemas for the FastAPI service."""
 
+import re
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, ValidationInfo, field_validator
 
 from src.core.telemetry import RunCostSummary, TokenUsage
 from src.schemas.plan import ResearchPlan
@@ -36,6 +37,31 @@ class APIKeysConfig(BaseModel):
     anthropic: SecretStr | None = Field(default=None, description="Anthropic API Key")
     groq: SecretStr | None = Field(default=None, description="Groq API Key")
     tavily: SecretStr | None = Field(default=None, description="Tavily Search API Key")
+
+    @field_validator("gemini", "openai", "anthropic", "groq", "tavily", mode="before")
+    @classmethod
+    def validate_key_format(cls, v: Any, info: ValidationInfo) -> Any:
+        """Validate key format: enforce length bounds and reject control chars or injection patterns."""
+        if v is None:
+            return None
+        raw_val = v.get_secret_value() if isinstance(v, SecretStr) else str(v)
+        if re.search(r"[\r\n\t\x00-\x1f]", raw_val):
+            raise ValueError(
+                f"API key for '{info.field_name}' contains illegal control or newline characters."
+            )
+        raw_val = raw_val.strip()
+        if not raw_val:
+            return None
+        if len(raw_val) < 10 or len(raw_val) > 200:
+            raise ValueError(
+                f"API key for '{info.field_name}' must be between 10 and 200 characters."
+            )
+        if not re.fullmatch(r"^[A-Za-z0-9_\-\.]+$", raw_val):
+            raise ValueError(
+                f"API key for '{info.field_name}' contains invalid characters. "
+                "Only alphanumeric characters, '-', '_', and '.' are allowed."
+            )
+        return raw_val
 
     def get_secret(self, provider: str) -> str | None:
         """Safely expose the raw plaintext secret strictly for LLM client construction."""
