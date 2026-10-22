@@ -183,14 +183,21 @@ class ResearchJobService:
             collector = None
 
             if llm is None:
-                user_keys = request.api_keys.model_dump() if request.api_keys else {}
+                user_keys = (
+                    request.api_keys.to_exposed_dict()
+                    if request.api_keys and hasattr(request.api_keys, "to_exposed_dict")
+                    else (request.api_keys.model_dump() if request.api_keys else {})
+                )
                 matrix = request.model_matrix.model_dump() if request.model_matrix else {}
 
                 def _get_key_for_model(model_name: str | None) -> str | None:
                     if not model_name:
                         return None
                     prov = detect_provider(model_name)
-                    return user_keys.get(prov)
+                    val = user_keys.get(prov)
+                    if hasattr(val, "get_secret_value"):
+                        return val.get_secret_value()
+                    return val
 
                 planner_model = matrix.get("planner")
                 researcher_model = matrix.get("researcher")
@@ -219,6 +226,8 @@ class ResearchJobService:
                 )
 
                 tavily_user_key = user_keys.get("tavily")
+                if hasattr(tavily_user_key, "get_secret_value"):
+                    tavily_user_key = tavily_user_key.get_secret_value()
                 if tavily_user_key:
                     from src.tools.evidence_collector import EvidenceCollector
                     from src.tools.search import MultiSearchClient, TavilySearchClient
@@ -702,6 +711,14 @@ class ResearchJobService:
                 logger.warning(
                     "Failed broadcasting job_failed event", run_id=run_id, error=str(broad_exc)
                 )
+        finally:
+            # Memory zeroization / key scoping:
+            # Evict exposed BYOK API key references so heap dumps do not retain credentials
+            from src.core.security import zero_out_secrets
+
+            if hasattr(request, "api_keys") and request.api_keys is not None:
+                zero_out_secrets(request.api_keys)
+                request.api_keys = None
 
     async def get_status(self, run_id: str) -> ResearchStatusResponse | None:
         """Fetch current status and report (if completed) for a given run ID."""

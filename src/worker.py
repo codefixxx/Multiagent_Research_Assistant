@@ -109,7 +109,16 @@ class ResearchWorker:
             "Worker picked up research job from queue", worker_id=self.worker_id, run_id=run_id
         )
 
+        decrypted_keys = None
         try:
+            # If payload has encrypted BYOK keys, decrypt them with AAD=run_id
+            encrypted_keys = job_data.get("encrypted_keys")
+            if encrypted_keys:
+                from src.core.security import decrypt_secrets
+
+                decrypted_keys = decrypt_secrets(encrypted_keys, aad=run_id)
+                req_dict["api_keys"] = decrypted_keys
+
             request = ResearchRequest.model_validate(req_dict)
             assert self.job_service is not None
             # Execute the research graph with all telemetry, persistence, and event emissions
@@ -153,6 +162,15 @@ class ResearchWorker:
                     )
                 except Exception:
                     pass
+        finally:
+            from src.core.security import zero_out_secrets
+
+            if decrypted_keys:
+                zero_out_secrets(decrypted_keys)
+            if "api_keys" in req_dict and isinstance(req_dict["api_keys"], dict):
+                zero_out_secrets(req_dict["api_keys"])
+            if "encrypted_keys" in job_data:
+                job_data["encrypted_keys"] = None
 
     async def _heartbeat_loop(self) -> None:
         """Send periodic heartbeats to Redis registering worker availability."""

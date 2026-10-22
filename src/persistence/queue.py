@@ -24,16 +24,35 @@ class RedisJobQueue:
         request: ResearchRequest,
         priority: int = 0,
     ) -> dict[str, Any]:
-        """Enqueue a research job payload into the Redis queue."""
+        """Enqueue a research job payload into the Redis queue with encrypted BYOK secrets."""
+        encrypted_keys = None
+        if request.api_keys and hasattr(request.api_keys, "has_keys") and request.api_keys.has_keys():
+            from src.core.security import encrypt_secrets
+
+            exposed = request.api_keys.to_exposed_dict()
+            encrypted_keys = encrypt_secrets(exposed, aad=run_id)
+
         payload = {
             "run_id": run_id,
             "request": request.model_dump(mode="json"),
+            "encrypted_keys": encrypted_keys,
             "enqueued_at": datetime.now(UTC).isoformat(),
             "priority": priority,
         }
         await self.redis.rpush(self.queue_key, json.dumps(payload))
         logger.info("Enqueued research job in Redis queue", run_id=run_id, query=request.query)
         return payload
+
+    @staticmethod
+    def extract_and_decrypt_keys(job_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Decrypt ephemeral BYOK keys from a dequeued job payload using AES-256-GCM and run_id AAD."""
+        encrypted_keys = job_data.get("encrypted_keys")
+        run_id = job_data.get("run_id")
+        if not encrypted_keys or not run_id:
+            return None
+        from src.core.security import decrypt_secrets
+
+        return decrypt_secrets(encrypted_keys, aad=run_id)
 
     async def dequeue(self, timeout: float = 2.0) -> dict[str, Any] | None:
         """Pop the next available research job from the queue with timeout."""

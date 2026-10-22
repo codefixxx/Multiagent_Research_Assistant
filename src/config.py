@@ -130,6 +130,11 @@ class Settings(BaseSettings):
         description="Number of concurrent research jobs per worker node.",
         validation_alias=AliasChoices("WORKER_CONCURRENCY", "worker_concurrency"),
     )
+    QUEUE_ENCRYPTION_KEY: str | None = Field(
+        default=None,
+        description="Optional 256-bit (32-byte) hex or base64 key for AES-256-GCM queue payload encryption.",
+        validation_alias=AliasChoices("QUEUE_ENCRYPTION_KEY", "queue_encryption_key"),
+    )
 
     # Production Budget & Guardrails
     MAX_SUB_QUESTIONS: int = 4

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 from src.core.telemetry import RunCostSummary, TokenUsage
 from src.schemas.plan import ResearchPlan
@@ -25,13 +25,40 @@ class ModelMatrixConfig(BaseModel):
 
 
 class APIKeysConfig(BaseModel):
-    """Optional ephemeral user API keys for BYOK (Bring Your Own Key) execution."""
+    """Optional ephemeral user API keys for BYOK (Bring Your Own Key) execution.
 
-    gemini: str | None = Field(default=None, description="Google Gemini API Key")
-    openai: str | None = Field(default=None, description="OpenAI API Key")
-    anthropic: str | None = Field(default=None, description="Anthropic API Key")
-    groq: str | None = Field(default=None, description="Groq API Key")
-    tavily: str | None = Field(default=None, description="Tavily Search API Key")
+    Keys are strongly typed as SecretStr to prevent leakage in logs, traces,
+    JSON serializations, or exception representations.
+    """
+
+    gemini: SecretStr | None = Field(default=None, description="Google Gemini API Key")
+    openai: SecretStr | None = Field(default=None, description="OpenAI API Key")
+    anthropic: SecretStr | None = Field(default=None, description="Anthropic API Key")
+    groq: SecretStr | None = Field(default=None, description="Groq API Key")
+    tavily: SecretStr | None = Field(default=None, description="Tavily Search API Key")
+
+    def get_secret(self, provider: str) -> str | None:
+        """Safely expose the raw plaintext secret strictly for LLM client construction."""
+        val = getattr(self, provider.lower(), None)
+        if val is None:
+            return None
+        if isinstance(val, SecretStr):
+            return val.get_secret_value()
+        return str(val)
+
+    def to_exposed_dict(self) -> dict[str, str | None]:
+        """Convert to raw dictionary with exposed secret values for internal factory consumption only."""
+        return {
+            "gemini": self.get_secret("gemini"),
+            "openai": self.get_secret("openai"),
+            "anthropic": self.get_secret("anthropic"),
+            "groq": self.get_secret("groq"),
+            "tavily": self.get_secret("tavily"),
+        }
+
+    def has_keys(self) -> bool:
+        """Check if any provider secret key is configured."""
+        return any(v is not None for v in self.to_exposed_dict().values())
 
 
 class ResearchRequest(BaseModel):

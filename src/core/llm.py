@@ -48,9 +48,10 @@ def detect_provider(model_name: str | None, default_provider: str | None = None)
 def validate_model_configuration(
     provider: str | None = None,
     model_name: str | None = None,
-    api_key: str | None = None,
+    api_key: str | SecretStr | None = None,
 ) -> None:
     """Validate provider, model selection, and key presence without initiating external network calls."""
+    raw_key = api_key.get_secret_value() if isinstance(api_key, SecretStr) else api_key
     target_provider = (provider or detect_provider(model_name)).lower()
     valid_providers = {"gemini", "groq", "openai", "anthropic", "ollama", "mock"}
     if target_provider not in valid_providers:
@@ -62,25 +63,25 @@ def validate_model_configuration(
         )
 
     # Check key requirements
-    if target_provider == "gemini" and not (api_key or settings.GEMINI_API_KEY):
+    if target_provider == "gemini" and not (raw_key or settings.GEMINI_API_KEY):
         raise AuthenticationError(
             "GEMINI_API_KEY is not configured.",
             provider="gemini",
             suggestion="Please provide a Gemini API key in Settings or set GEMINI_API_KEY in .env.",
         )
-    if target_provider == "groq" and not (api_key or settings.GROQ_API_KEY):
+    if target_provider == "groq" and not (raw_key or settings.GROQ_API_KEY):
         raise AuthenticationError(
             "GROQ_API_KEY is not configured.",
             provider="groq",
             suggestion="Please provide a Groq API key in Settings or set GROQ_API_KEY in .env.",
         )
-    if target_provider == "openai" and not (api_key or settings.OPENAI_API_KEY):
+    if target_provider == "openai" and not (raw_key or settings.OPENAI_API_KEY):
         raise AuthenticationError(
             "OPENAI_API_KEY is not configured.",
             provider="openai",
             suggestion="Please provide an OpenAI API key in Settings or set OPENAI_API_KEY in .env.",
         )
-    if target_provider == "anthropic" and not (api_key or settings.ANTHROPIC_API_KEY):
+    if target_provider == "anthropic" and not (raw_key or settings.ANTHROPIC_API_KEY):
         raise AuthenticationError(
             "ANTHROPIC_API_KEY is not configured.",
             provider="anthropic",
@@ -152,7 +153,7 @@ async def verify_model_connectivity(
 def get_chat_model(
     provider: str | None = None,
     model_name: str | None = None,
-    api_key: str | None = None,
+    api_key: str | SecretStr | None = None,
     temperature: float = 0.1,
     max_tokens: int | None = None,
 ) -> BaseChatModel:
@@ -166,10 +167,11 @@ def get_chat_model(
         - "ollama": Local inference models via Ollama.
         - "mock": Mock chat model for testing without API keys.
     """
+    raw_key = api_key.get_secret_value() if isinstance(api_key, SecretStr) else api_key
     target_provider = (provider or detect_provider(model_name)).lower()
 
     if target_provider == "gemini":
-        active_key = api_key or settings.GEMINI_API_KEY
+        active_key = raw_key or settings.GEMINI_API_KEY
         if not active_key:
             raise AuthenticationError(
                 "GEMINI_API_KEY is not configured.",
@@ -190,7 +192,7 @@ def get_chat_model(
         )
 
     if target_provider == "openai":
-        active_key = api_key or settings.OPENAI_API_KEY
+        active_key = raw_key or settings.OPENAI_API_KEY
         if not active_key:
             raise LLMConfigurationError(
                 "OPENAI_API_KEY is not configured. "
@@ -212,7 +214,7 @@ def get_chat_model(
         )
 
     if target_provider == "anthropic":
-        active_key = api_key or settings.ANTHROPIC_API_KEY
+        active_key = raw_key or settings.ANTHROPIC_API_KEY
         if not active_key:
             raise LLMConfigurationError(
                 "ANTHROPIC_API_KEY is not configured. "
@@ -232,7 +234,7 @@ def get_chat_model(
         )
 
     if target_provider == "groq":
-        active_key = api_key or settings.GROQ_API_KEY
+        active_key = raw_key or settings.GROQ_API_KEY
         if not active_key:
             if settings.GEMINI_API_KEY:
                 logger.warning(
@@ -243,7 +245,7 @@ def get_chat_model(
                 return get_chat_model(
                     provider="gemini",
                     model_name=model_name,
-                    api_key=api_key,
+                    api_key=raw_key,
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
