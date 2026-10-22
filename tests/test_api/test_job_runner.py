@@ -1,6 +1,7 @@
 """Tests for ResearchJobService, event streaming, and cancellation."""
 
 import asyncio
+import uuid
 
 import pytest
 
@@ -73,9 +74,6 @@ async def test_job_service_cancellation(mock_llm):
     status_resp = await service.get_status(run_id)
     assert status_resp is not None
     assert status_resp.status in ("cancelled", "failed")
-
-
-import uuid
 
 
 @pytest.mark.asyncio

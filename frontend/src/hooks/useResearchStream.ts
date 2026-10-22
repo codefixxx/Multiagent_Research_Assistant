@@ -181,6 +181,14 @@ export function useResearchStream() {
           setConsolidatorState('waiting');
           if (isAwaiting) {
             setStatus('awaiting_approval');
+            if (payload.plan) {
+              setJobData(prev => ({
+                ...(prev || { run_id: currentRunId || '', query: '', status: 'awaiting_approval' }),
+                status: 'awaiting_approval',
+                plan: payload.plan,
+                hitl_enabled: true
+              }));
+            }
           } else {
             setStatus('researching');
           }

@@ -331,7 +331,9 @@ class ResearchJobService:
                                 data={
                                     "status": "researching",
                                     "sub_questions": [
-                                        sq.model_dump(mode="json") if hasattr(sq, "model_dump") else sq
+                                        sq.model_dump(mode="json")
+                                        if hasattr(sq, "model_dump")
+                                        else sq
                                         for sq in sub_questions
                                     ],
                                     "plan": plan.model_dump(mode="json")

@@ -332,9 +332,7 @@ def build_research_graph(
             logger.warning("Human rejected research plan; cancelling execution", run_id=run_id)
             if run_manager and run_id:
                 try:
-                    await run_manager.update_run_status(
-                        run_id=run_id, status="cancelled"
-                    )
+                    await run_manager.update_run_status(run_id=run_id, status="cancelled")
                 except Exception as e:
                     logger.debug("Failed updating run status on rejection", error=str(e))
             return {

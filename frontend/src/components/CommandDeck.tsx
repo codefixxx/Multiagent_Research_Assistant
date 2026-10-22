@@ -28,7 +28,21 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
   const [timeLimit, setTimeLimit] = useState(120);
   const [deepScrape, setDeepScrape] = useState(true);
   const [focusMode, setFocusMode] = useState('general');
-  const [hitlEnabled, setHitlEnabled] = useState(false);
+  const [hitlEnabled, setHitlEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('multiagent_hitl_enabled');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleHitlToggle = (checked: boolean) => {
+    setHitlEnabled(checked);
+    try {
+      localStorage.setItem('multiagent_hitl_enabled', String(checked));
+    } catch {}
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,7 +154,7 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
               <input
                 type="checkbox"
                 checked={hitlEnabled}
-                onChange={(e) => setHitlEnabled(e.target.checked)}
+                onChange={(e) => handleHitlToggle(e.target.checked)}
                 disabled={isDispatching}
                 className="w-3.5 h-3.5 rounded border-[#222224] bg-transparent text-[#d9a441] focus:ring-0 cursor-pointer"
               />

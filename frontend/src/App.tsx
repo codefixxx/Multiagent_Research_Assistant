@@ -119,6 +119,7 @@ export function App() {
         {/* Dual Canvas Studio */}
         <SplitStudio
           jobData={jobData}
+          status={status}
           logs={logs}
           ragScore={ragScore}
           findingsCount={findingsCount}
@@ -130,7 +131,14 @@ export function App() {
           onSteerPlan={steerPlan}
           onRetry={() => {
             if (jobData?.query) {
-              handleDispatch(jobData.query, 2, 120, true);
+              handleDispatch(
+                jobData.query,
+                2,
+                120,
+                true,
+                jobData.focus_mode || 'general',
+                jobData.hitl_enabled !== undefined ? jobData.hitl_enabled : true
+              );
             }
           }}
         />

@@ -5,6 +5,7 @@ import type {
   RAGScore, 
   Citation,
   ResearchPlan,
+  JobStatus,
 } from '../types';
 import { PlanSteeringCard } from './PlanSteeringCard';
 import { marked } from 'marked';
@@ -38,6 +39,7 @@ interface SplitStudioProps {
   onSelectCitation: (citation: Citation) => void;
   onOpenSettings?: () => void;
   onRetry?: () => void;
+  status?: JobStatus;
   onSteerPlan?: (
     action: 'approve' | 'modify' | 'regenerate' | 'reject',
     modifiedPlan?: ResearchPlan,
@@ -54,6 +56,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
   onSelectCitation,
   onOpenSettings,
   onRetry,
+  status,
   onSteerPlan
 }) => {
   const [copied, setCopied] = React.useState(false);
@@ -407,12 +410,12 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                   <span>Ready</span>
                 </span>
               )}
-              {jobData?.status === 'awaiting_approval' && (
+              {(jobData?.status === 'awaiting_approval' || status === 'awaiting_approval') && (
                 <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-medium bg-[#d9a441]/20 text-[#d9a441] border border-[#d9a441]/35 animate-pulse">
                   <span>Awaiting Decision</span>
                 </span>
               )}
-              {jobData?.status === 'cancelled' && (
+              {(jobData?.status === 'cancelled' || status === 'cancelled') && (
                 <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-medium bg-[#e5566f]/20 text-[#e5566f] border border-[#e5566f]/30">
                   <span>Cancelled</span>
                 </span>
@@ -481,14 +484,14 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
           {/* Body */}
           <div className="p-6 sm:p-8 flex-1 overflow-y-auto" onClick={handleContainerClick}>
             {!report ? (
-              jobData?.status === 'awaiting_approval' ? (
+              (jobData?.status === 'awaiting_approval' || status === 'awaiting_approval') ? (
                 <div className="py-2 max-w-3xl mx-auto">
                   <PlanSteeringCard
-                    initialPlan={jobData.plan}
+                    initialPlan={jobData?.plan}
                     onSteer={onSteerPlan || (async () => false)}
                   />
                 </div>
-              ) : jobData?.status === 'cancelled' ? (
+              ) : (jobData?.status === 'cancelled' || status === 'cancelled') ? (
                 <div className="py-8 px-4 max-w-xl mx-auto space-y-4 animate-in fade-in duration-200">
                   <div className="p-5 sm:p-6 rounded-lg border bg-[#1a1820] border-[#34323e]">
                     <div className="flex items-start space-x-3.5 mb-3.5">
@@ -504,7 +507,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                             CANCELLED_BY_USER
                           </span>
                         </div>
-                        {jobData.query && (
+                        {jobData?.query && (
                           <p className="text-xs text-[#8a8c92] mt-1 line-clamp-1">
                             Topic: &quot;{jobData.query}&quot;
                           </p>
