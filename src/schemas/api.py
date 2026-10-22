@@ -129,6 +129,8 @@ class ResearchHistoryItem(BaseModel):
     rag_score: RAGQualityScore | None = None
     has_report: bool = False
     error_message: str | None = None
+    error_code: str | None = None
+    error_suggestion: str | None = None
 
 
 class ResearchHistoryResponse(BaseModel):

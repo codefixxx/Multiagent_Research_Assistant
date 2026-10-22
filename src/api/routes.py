@@ -105,6 +105,8 @@ async def list_research_history(
                 rag_score=r.get("rag_score"),
                 has_report=r.get("has_report", False),
                 error_message=r.get("error_message"),
+                error_code=r.get("error_code"),
+                error_suggestion=r.get("error_suggestion"),
             )
         )
     return ResearchHistoryResponse(

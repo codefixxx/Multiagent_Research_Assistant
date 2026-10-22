@@ -13,7 +13,13 @@ import {
   Check, 
   CheckCircle2, 
   ShieldCheck, 
-  BookOpen
+  BookOpen,
+  AlertTriangle,
+  KeyRound,
+  Cpu,
+  XCircle,
+  SlidersHorizontal,
+  RefreshCw
 } from 'lucide-react';
 
 interface SplitStudioProps {
@@ -25,6 +31,8 @@ interface SplitStudioProps {
   superstepsCount?: number;
   spans?: unknown[];
   onSelectCitation: (citation: Citation) => void;
+  onOpenSettings?: () => void;
+  onRetry?: () => void;
 }
 
 export const SplitStudio: React.FC<SplitStudioProps> = ({
@@ -33,7 +41,9 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
   ragScore,
   findingsCount,
   citationsCount,
-  onSelectCitation
+  onSelectCitation,
+  onOpenSettings,
+  onRetry
 }) => {
   const [copied, setCopied] = React.useState(false);
 
@@ -64,6 +74,32 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
       return report.markdown_output;
     }
   }, [report]);
+
+  // Determine error category for actionable user remediation
+  const isRateLimit = useMemo(() => {
+    const code = (jobData?.error_code || '').toLowerCase();
+    const msg = (jobData?.error_message || '').toLowerCase();
+    return code.includes('rate_limit') || msg.includes('quota') || msg.includes('rate limit') || msg.includes('429') || msg.includes('resource_exhausted');
+  }, [jobData]);
+
+  const isAuth = useMemo(() => {
+    const code = (jobData?.error_code || '').toLowerCase();
+    const msg = (jobData?.error_message || '').toLowerCase();
+    return code.includes('auth') || code.includes('key') || msg.includes('api key') || msg.includes('unauthorized') || msg.includes('permission_denied') || msg.includes('401') || msg.includes('403');
+  }, [jobData]);
+
+  const isModelNotFound = useMemo(() => {
+    const code = (jobData?.error_code || '').toLowerCase();
+    const msg = (jobData?.error_message || '').toLowerCase();
+    return code.includes('model') || msg.includes('not found') || msg.includes('does not exist') || msg.includes('404');
+  }, [jobData]);
+
+  const errorTitle = useMemo(() => {
+    if (isRateLimit) return 'Model Quota or Rate Limit Reached';
+    if (isAuth) return 'API Key Authentication Failed';
+    if (isModelNotFound) return 'Model Unavailable or Not Found';
+    return 'Research Job Failed';
+  }, [isRateLimit, isAuth, isModelNotFound]);
 
   const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
@@ -336,28 +372,119 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
           {/* Body */}
           <div className="p-6 sm:p-8 flex-1 overflow-y-auto" onClick={handleContainerClick}>
             {!report ? (
-              <div className="py-16 px-4 max-w-xl mx-auto text-left space-y-4">
-                <div className="border-l-2 border-[#4a8ad6] pl-4">
-                  <h3 className="text-base font-semibold text-white">Workbench ready for inquiry</h3>
-                  <p className="text-xs sm:text-sm text-[#8a8c92] mt-1 leading-relaxed">
-                    Submit a question to execute multi-agent web research with factual verification.
-                  </p>
+              jobData?.status === 'failed' || jobData?.error_message ? (
+                <div className="py-8 px-4 max-w-xl mx-auto space-y-4 animate-in fade-in duration-200">
+                  {/* Actionable Error Card Container */}
+                  <div className={`p-5 sm:p-6 rounded-lg border ${
+                    isRateLimit 
+                      ? 'bg-[#d9a441]/10 border-[#d9a441]/35' 
+                      : isAuth 
+                      ? 'bg-[#e5566f]/10 border-[#e5566f]/35' 
+                      : isModelNotFound
+                      ? 'bg-[#8b5cf6]/10 border-[#8b5cf6]/35'
+                      : 'bg-[#e5566f]/10 border-[#e5566f]/35'
+                  }`}>
+                    {/* Header with Title and Icon */}
+                    <div className="flex items-start space-x-3.5 mb-3.5">
+                      <div className={`p-2.5 rounded-md shrink-0 ${
+                        isRateLimit 
+                          ? 'bg-[#d9a441]/20 text-[#d9a441]' 
+                          : isAuth 
+                          ? 'bg-[#e5566f]/20 text-[#e5566f]' 
+                          : isModelNotFound
+                          ? 'bg-[#8b5cf6]/20 text-[#8b5cf6]'
+                          : 'bg-[#e5566f]/20 text-[#e5566f]'
+                      }`}>
+                        {isRateLimit && <AlertTriangle className="w-5 h-5 stroke-[2]" />}
+                        {isAuth && <KeyRound className="w-5 h-5 stroke-[2]" />}
+                        {isModelNotFound && <Cpu className="w-5 h-5 stroke-[2]" />}
+                        {!isRateLimit && !isAuth && !isModelNotFound && <XCircle className="w-5 h-5 stroke-[2]" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-sm sm:text-base text-white">
+                            {errorTitle}
+                          </h3>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium ${
+                            isRateLimit 
+                              ? 'bg-[#d9a441]/25 text-[#d9a441] border border-[#d9a441]/40' 
+                              : isAuth 
+                              ? 'bg-[#e5566f]/25 text-[#e5566f] border border-[#e5566f]/40' 
+                              : 'bg-[#e5566f]/25 text-[#e5566f] border border-[#e5566f]/40'
+                          }`}>
+                            {jobData.error_code || (isRateLimit ? 'RATE_LIMIT_429' : 'ERROR')}
+                          </span>
+                        </div>
+                        {jobData.query && (
+                          <p className="text-xs text-[#8a8c92] mt-1 line-clamp-1">
+                            Investigation: &quot;{jobData.query}&quot;
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Explanatory Message */}
+                    <div className="bg-[#131217] p-3.5 rounded-md border border-[#222224] text-xs text-white/90 leading-relaxed mb-3">
+                      {jobData.error_message || 'The research execution encountered an unexpected error.'}
+                    </div>
+
+                    {/* Actionable Solution Note */}
+                    {jobData.error_suggestion && (
+                      <div className="flex items-start space-x-2 text-xs text-[#8a8c92] mb-4 bg-white/5 p-3 rounded border border-white/10 leading-relaxed">
+                        <span className="text-[#4a8ad6] shrink-0 font-bold">Suggested Fix:</span>
+                        <span className="text-white/80">{jobData.error_suggestion}</span>
+                      </div>
+                    )}
+
+                    {/* Action Buttons: Open Settings & Retry */}
+                    <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-[#222224]">
+                      {onOpenSettings && (
+                        <button
+                          type="button"
+                          onClick={onOpenSettings}
+                          className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-md bg-[#2568b2] hover:bg-[#1e5494] text-white text-xs font-medium transition-colors cursor-pointer shadow-sm"
+                        >
+                          <SlidersHorizontal className="w-3.5 h-3.5" />
+                          <span>Configure Model &amp; API Keys</span>
+                        </button>
+                      )}
+                      {onRetry && (
+                        <button
+                          type="button"
+                          onClick={onRetry}
+                          className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-white text-xs font-medium transition-colors cursor-pointer"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-[#4a8ad6]" />
+                          <span>Retry Query</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs text-[#8a8c92]">
-                  <div className="p-3 rounded-md bg-[#171719] border border-[#222224]">
-                    <div className="text-white font-medium mb-1">1. Decomposition</div>
-                    <div>Partitions topic into focused sub-inquiries.</div>
+              ) : (
+                <div className="py-16 px-4 max-w-xl mx-auto text-left space-y-4">
+                  <div className="border-l-2 border-[#4a8ad6] pl-4">
+                    <h3 className="text-base font-semibold text-white">Workbench ready for inquiry</h3>
+                    <p className="text-xs sm:text-sm text-[#8a8c92] mt-1 leading-relaxed">
+                      Submit a question to execute multi-agent web research with factual verification.
+                    </p>
                   </div>
-                  <div className="p-3 rounded-md bg-[#171719] border border-[#222224]">
-                    <div className="text-white font-medium mb-1">2. Retrieval</div>
-                    <div>Gathers and cross-checks live web sources.</div>
-                  </div>
-                  <div className="p-3 rounded-md bg-[#171719] border border-[#222224]">
-                    <div className="text-white font-medium mb-1">3. Synthesis</div>
-                    <div>Builds cited report with verification scoring.</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs text-[#8a8c92]">
+                    <div className="p-3 rounded-md bg-[#171719] border border-[#222224]">
+                      <div className="text-white font-medium mb-1">1. Decomposition</div>
+                      <div>Partitions topic into focused sub-inquiries.</div>
+                    </div>
+                    <div className="p-3 rounded-md bg-[#171719] border border-[#222224]">
+                      <div className="text-white font-medium mb-1">2. Retrieval</div>
+                      <div>Gathers and cross-checks live web sources.</div>
+                    </div>
+                    <div className="p-3 rounded-md bg-[#171719] border border-[#222224]">
+                      <div className="text-white font-medium mb-1">3. Synthesis</div>
+                      <div>Builds cited report with verification scoring.</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             ) : (
               <div 
                 className="prose-dossier text-sm" 

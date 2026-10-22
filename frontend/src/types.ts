@@ -117,6 +117,9 @@ export interface ResearchJobData {
   findings_count?: number;
   citations_count?: number;
   error_message?: string | null;
+  error_code?: string | null;
+  error_suggestion?: string | null;
+  error_details?: Record<string, any> | null;
   sub_questions?: string[];
   created_at?: string;
 }
@@ -142,6 +145,9 @@ export interface ResearchHistoryItem {
   rag_score?: RAGScore | null;
   has_report?: boolean;
   error_message?: string | null;
+  error_code?: string | null;
+  error_suggestion?: string | null;
+  error_details?: Record<string, any> | null;
 }
 
 export interface ResearchHistoryResponse {

@@ -240,7 +240,17 @@ export function useResearchStream() {
           setStatus('failed');
           setIsDispatching(false);
           stopTimer();
-          appendLog('SYSTEM', `Run failed: ${payload.error || 'Execution encountered an error'}`, 'error');
+          setJobData(prev => ({
+            run_id: currentRunId || (prev?.run_id ?? ''),
+            status: 'failed',
+            query: prev?.query ?? '',
+            report: null,
+            error_message: payload.error || payload.error_message || 'Execution encountered an error',
+            error_code: payload.code || payload.error_code,
+            error_suggestion: payload.suggestion || payload.error_suggestion,
+            error_details: payload.details || payload.error_details,
+          }));
+          appendLog('SYSTEM', `Run failed: ${payload.error || payload.error_message || 'Execution encountered an error'}`, 'error');
           if (payload.suggestion) {
             appendLog('SYSTEM', `💡 Actionable fix: ${payload.suggestion}`, 'system');
           }
@@ -303,7 +313,20 @@ export function useResearchStream() {
         if (!res.ok) return;
         const data: ResearchJobData = await res.json();
         
-        if (data.status === 'completed' || data.status === 'failed' || data.status === 'budget_exceeded') {
+        if (data.status === 'failed') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          if (eventSourceRef.current) eventSourceRef.current.close();
+          setStatus('failed');
+          setIsDispatching(false);
+          stopTimer();
+          setJobData(data);
+          if (data.error_message) {
+            appendLog('SYSTEM', `Run failed: ${data.error_message}`, 'error');
+          }
+          if (data.error_suggestion) {
+            appendLog('SYSTEM', `💡 Actionable fix: ${data.error_suggestion}`, 'system');
+          }
+        } else if (data.status === 'completed' || data.status === 'budget_exceeded') {
           if (data.report && (data.report.title || data.report.markdown_output)) {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             if (eventSourceRef.current) eventSourceRef.current.close();
@@ -319,7 +342,7 @@ export function useResearchStream() {
         console.warn('Polling error:', e);
       }
     }, 2500);
-  }, [finalizeRun]);
+  }, [finalizeRun, stopTimer, appendLog]);
 
   const dispatchInvestigation = useCallback(async (
     query: string,
@@ -367,8 +390,18 @@ export function useResearchStream() {
       if (!res.ok) {
         const errJson = await res.json().catch(() => ({}));
         const errMsg = errJson.error || errJson.detail || errJson.message || `Server returned HTTP ${res.status}`;
-        const suggestion = errJson.suggestion ? ` (💡 ${errJson.suggestion})` : '';
-        throw new Error(`${errMsg}${suggestion}`);
+        const suggestion = errJson.suggestion || '';
+        const code = errJson.code || `HTTP_${res.status}`;
+        setJobData({
+          run_id: '',
+          query,
+          status: 'failed',
+          error_message: errMsg,
+          error_code: code,
+          error_suggestion: suggestion,
+          error_details: errJson.details,
+        });
+        throw new Error(`${errMsg}${suggestion ? ` (💡 ${suggestion})` : ''}`);
       }
 
       const data = await res.json();

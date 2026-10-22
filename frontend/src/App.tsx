@@ -118,6 +118,12 @@ export function App() {
           superstepsCount={superstepsCount}
           spans={activeSpans}
           onSelectCitation={(citation) => setSelectedCitation(citation)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          onRetry={() => {
+            if (jobData?.query) {
+              handleDispatch(jobData.query, 2, 120, true);
+            }
+          }}
         />
       </div>
 
