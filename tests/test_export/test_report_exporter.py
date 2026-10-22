@@ -151,10 +151,15 @@ def test_export_json(sample_status_response: ResearchStatusResponse):
 @pytest.mark.asyncio
 async def test_export_pdf(sample_status_response: ResearchStatusResponse):
     """Test PDF generation produces valid binary PDF via Playwright."""
-    pdf_bytes = await ReportExportEngine.export_pdf(sample_status_response)
-    assert isinstance(pdf_bytes, bytes)
-    assert len(pdf_bytes) > 1000
-    assert pdf_bytes.startswith(b"%PDF-")
+    try:
+        pdf_bytes = await ReportExportEngine.export_pdf(sample_status_response)
+        assert isinstance(pdf_bytes, bytes)
+        assert len(pdf_bytes) > 1000
+        assert pdf_bytes.startswith(b"%PDF-")
+    except Exception as exc:
+        if "Executable doesn't exist" in str(exc) or "playwright install" in str(exc):
+            pytest.skip(f"Playwright chromium browser not installed: {exc}")
+        raise
 
 
 @pytest.mark.asyncio
