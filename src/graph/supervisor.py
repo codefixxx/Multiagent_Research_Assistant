@@ -73,7 +73,7 @@ def route_after_planner(state: ResearchState) -> list[Send] | str:
 
     max_subqs = state.get("max_sub_questions")
     sub_questions = plan.sub_questions
-    if max_subqs and max_subqs > 0:
+    if max_subqs and max_subqs > 0 and not state.get("plan_approved"):
         sub_questions = sub_questions[:max_subqs]
 
     start_time = state.get("start_time", 0.0)

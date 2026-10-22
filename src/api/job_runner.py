@@ -239,6 +239,7 @@ class ResearchJobService:
                 checkpointer=self.checkpointer,
                 run_manager=self.run_manager,
                 idempotency_cache=self.idempotency_cache,
+                job_service=self,
             )
 
             initial_state = create_initial_state(
@@ -291,12 +292,13 @@ class ResearchJobService:
                     if node_name == "planner":
                         plan = node_output.get("plan")
                         sub_questions = getattr(plan, "sub_questions", []) if plan else []
+                        is_hitl = bool(merged_state.get("hitl_enabled"))
                         await self.broadcaster.broadcast(
                             run_id=run_id,
                             event="planner_completed",
                             data={
                                 "node": "planner",
-                                "status": "researching",
+                                "status": "awaiting_approval" if is_hitl else "researching",
                                 "sub_questions_count": len(sub_questions),
                                 "sub_questions": [
                                     sq.model_dump(mode="json") if hasattr(sq, "model_dump") else sq
@@ -308,6 +310,36 @@ class ResearchJobService:
                                 "objective": getattr(plan, "objective", ""),
                             },
                         )
+
+                    elif node_name == "plan_gate":
+                        current_status = node_output.get("status", "researching")
+                        plan = node_output.get("plan") or merged_state.get("plan")
+                        sub_questions = getattr(plan, "sub_questions", []) if plan else []
+                        if current_status == "cancelled":
+                            await self.broadcaster.broadcast(
+                                run_id=run_id,
+                                event="job_cancelled",
+                                data={
+                                    "status": "cancelled",
+                                    "message": "Research job was cancelled.",
+                                },
+                            )
+                        elif current_status == "researching":
+                            await self.broadcaster.broadcast(
+                                run_id=run_id,
+                                event="plan_approved",
+                                data={
+                                    "status": "researching",
+                                    "sub_questions": [
+                                        sq.model_dump(mode="json") if hasattr(sq, "model_dump") else sq
+                                        for sq in sub_questions
+                                    ],
+                                    "plan": plan.model_dump(mode="json")
+                                    if hasattr(plan, "model_dump")
+                                    else plan,
+                                    "message": "Plan approved. Spawning parallel web researchers.",
+                                },
+                            )
 
                     elif node_name == "researcher":
                         findings = merged_state.get("findings", [])
@@ -432,6 +464,24 @@ class ResearchJobService:
                 logger.debug("Failed querying canonical checkpointer state", error=str(e))
 
             final_status = merged_state.get("status", "completed")
+            if final_status == "cancelled":
+                await self.run_manager.update_run_status(
+                    run_id=run_id,
+                    status="cancelled",
+                    current_node="cancelled",
+                )
+                await self.broadcaster.broadcast(
+                    run_id=run_id,
+                    event="job_cancelled",
+                    data={
+                        "status": "cancelled",
+                        "message": "Research job was cancelled.",
+                    },
+                )
+                await self.run_manager.apply_ttl(run_id)
+                logger.info("Research job execution concluded (cancelled by user)", run_id=run_id)
+                return
+
             raw_report = merged_state.get("report")
             findings_list = merged_state.get("findings", [])
 

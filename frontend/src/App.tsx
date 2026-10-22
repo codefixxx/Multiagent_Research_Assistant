@@ -113,6 +113,7 @@ export function App() {
           writerState={writerState}
           workers={subQuestions}
           isAwaitingApproval={status === 'awaiting_approval'}
+          status={status}
         />
 
         {/* Dual Canvas Studio */}

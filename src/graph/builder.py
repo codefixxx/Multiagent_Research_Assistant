@@ -106,6 +106,7 @@ def build_research_graph(
     evidence_collector: EvidenceCollector | None = None,
     run_manager: Any = None,
     idempotency_cache: Any = None,
+    job_service: Any = None,
 ) -> StateGraph:
     """Build and return an uncompiled StateGraph for the research system."""
     active_planner_llm = llm_planner or llm
@@ -277,12 +278,16 @@ def build_research_graph(
         except Exception as e:
             logger.debug("Failed broadcasting awaiting_plan_approval", error=str(e))
 
-        from src.api.job_runner import job_service
+        effective_job_service = job_service
+        if effective_job_service is None:
+            from src.api.job_runner import job_service as global_job_service
 
-        decision = await job_service.wait_for_plan_decision(run_id=run_id, timeout=900)
+            effective_job_service = global_job_service
+
+        decision = await effective_job_service.wait_for_plan_decision(run_id=run_id, timeout=900)
         action = decision.get("action", "approve")
 
-        if action == "modify" and decision.get("modified_plan"):
+        if (action in ("modify", "approve")) and decision.get("modified_plan"):
             mod_plan = _normalize_plan(decision["modified_plan"])
             logger.info("Human steered research plan with custom edits", run_id=run_id)
             if run_manager and run_id:
@@ -328,13 +333,12 @@ def build_research_graph(
             if run_manager and run_id:
                 try:
                     await run_manager.update_run_status(
-                        run_id=run_id, status="cancelled", error_message="Plan rejected by user."
+                        run_id=run_id, status="cancelled"
                     )
                 except Exception as e:
                     logger.debug("Failed updating run status on rejection", error=str(e))
             return {
                 "status": "cancelled",
-                "error_message": "Plan rejected by user.",
             }
 
         else:  # approve
@@ -1171,6 +1175,7 @@ def compile_research_graph(
     evidence_collector: EvidenceCollector | None = None,
     run_manager: Any = None,
     idempotency_cache: Any = None,
+    job_service: Any = None,
 ):
     """Build and compile the research graph ready for execution."""
     builder = build_research_graph(
@@ -1182,6 +1187,7 @@ def compile_research_graph(
         evidence_collector=evidence_collector,
         run_manager=run_manager,
         idempotency_cache=idempotency_cache,
+        job_service=job_service,
     )
     return builder.compile(checkpointer=checkpointer)
 

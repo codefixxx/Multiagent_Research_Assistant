@@ -73,3 +73,59 @@ async def test_job_service_cancellation(mock_llm):
     status_resp = await service.get_status(run_id)
     assert status_resp is not None
     assert status_resp.status in ("cancelled", "failed")
+
+
+import uuid
+
+
+@pytest.mark.asyncio
+async def test_job_service_hitl_reject_cancellation(mock_llm):
+    """Rejecting a plan during HITL should cleanly mark run as cancelled without errors or RAG score."""
+    broadcaster = EventBroadcaster()
+    service = ResearchJobService(event_broadcaster=broadcaster, llm=mock_llm)
+    await service.initialize()
+
+    run_id = f"test-hitl-reject-{uuid.uuid4().hex[:8]}"
+    request = ResearchRequest(query="Test HITL cancellation", hitl_enabled=True)
+
+    events_received: list[str] = []
+
+    async def _listen():
+        async for msg in broadcaster.subscribe(run_id, heartbeat_interval=0.5):
+            events_received.append(msg)
+            if "event: job_cancelled" in msg:
+                break
+
+    listener_task = asyncio.create_task(_listen())
+
+    # Start job with HITL
+    await service.start_job(run_id=run_id, request=request, mode="embedded")
+
+    # Wait for the job to pause at plan_gate / awaiting_approval
+    for _ in range(50):
+        if run_id in service._plan_approval_events:
+            break
+        await asyncio.sleep(0.05)
+
+    # Submit plan rejection
+    decision_submitted = await service.submit_plan_decision(run_id=run_id, action="reject")
+    assert decision_submitted is True
+
+    # Wait for job task to conclude
+    task = service._active_tasks.get(run_id)
+    if task:
+        await task
+
+    try:
+        await asyncio.wait_for(listener_task, timeout=3.0)
+    except (TimeoutError, asyncio.CancelledError):
+        listener_task.cancel()
+
+    status_resp = await service.get_status(run_id)
+    assert status_resp is not None
+    assert status_resp.status == "cancelled"
+    assert status_resp.error_message is None
+    assert status_resp.rag_score is None
+
+    all_events = "".join(events_received)
+    assert "event: job_cancelled" in all_events

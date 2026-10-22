@@ -35,19 +35,22 @@ export const PlanSteeringCard: React.FC<PlanSteeringCardProps> = ({
   const [newTagInput, setNewTagInput] = useState<{ [key: string]: string }>({});
   const [hasUserEdited, setHasUserEdited] = useState(false);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const initializedPlanRef = React.useRef<string | null>(null);
 
-  // Sync initial plan
+  // Sync initial plan without overwriting active human edits during background polling
   useEffect(() => {
-    if (initialPlan) {
+    if (!initialPlan) return;
+    const planKey = JSON.stringify(initialPlan);
+    if (initializedPlanRef.current !== planKey && !hasUserEdited) {
+      initializedPlanRef.current = planKey;
       setObjective(initialPlan.objective || '');
       setSubQuestions(
         initialPlan.sub_questions && initialPlan.sub_questions.length > 0
           ? JSON.parse(JSON.stringify(initialPlan.sub_questions))
           : []
       );
-      setHasUserEdited(false);
     }
-  }, [initialPlan]);
+  }, [initialPlan, hasUserEdited]);
 
   const handleUpdateQuestion = (idx: number, field: keyof SubQuestion, value: any) => {
     setHasUserEdited(true);
@@ -108,7 +111,24 @@ export const PlanSteeringCard: React.FC<PlanSteeringCardProps> = ({
     });
   };
 
+  const handleResetToOriginal = () => {
+    if (initialPlan) {
+      setObjective(initialPlan.objective || '');
+      setSubQuestions(
+        initialPlan.sub_questions && initialPlan.sub_questions.length > 0
+          ? JSON.parse(JSON.stringify(initialPlan.sub_questions))
+          : []
+      );
+      setNewTagInput({});
+      setHasUserEdited(false);
+    }
+  };
+
   const handleApprove = async () => {
+    if (hasUserEdited) {
+      await handleModifyAndProceed();
+      return;
+    }
     setPendingAction('approve');
     await onSteer('approve');
     setPendingAction(null);
@@ -116,10 +136,25 @@ export const PlanSteeringCard: React.FC<PlanSteeringCardProps> = ({
 
   const handleModifyAndProceed = async () => {
     setPendingAction('modify');
+    const flushedSubqs = subQuestions.map((subq, sIdx) => {
+      const subqId = subq.id || String(sIdx);
+      const pendingText = (newTagInput[subqId] || '').trim();
+      const queries = [...(subq.search_queries || [])];
+      if (pendingText && !queries.includes(pendingText)) {
+        queries.push(pendingText);
+      }
+      return {
+        ...subq,
+        question: subq.question.trim() || `Investigation angle #${sIdx + 1}`,
+        rationale: subq.rationale.trim() || 'Required for comprehensive conclusion',
+        search_queries: queries.length > 0 ? queries : [subq.question.trim() || initialPlan?.query || 'web search']
+      };
+    });
+
     const modifiedPlan: ResearchPlan = {
       query: initialPlan?.query || '',
       objective: objective.trim() || initialPlan?.objective || '',
-      sub_questions: subQuestions
+      sub_questions: flushedSubqs
     };
     await onSteer('modify', modifiedPlan);
     setPendingAction(null);
@@ -163,19 +198,31 @@ export const PlanSteeringCard: React.FC<PlanSteeringCardProps> = ({
         {/* Quick Steer Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           {hasUserEdited ? (
-            <button
-              type="button"
-              onClick={handleModifyAndProceed}
-              disabled={isSubmitting || pendingAction !== null}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-md bg-[#2568b2] hover:bg-[#1e5494] text-white text-xs font-medium transition-colors cursor-pointer shadow-md disabled:opacity-50"
-            >
-              {pendingAction === 'modify' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Play className="w-3.5 h-3.5 fill-current" />
-              )}
-              <span>Apply Custom Plan &amp; Start</span>
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleModifyAndProceed}
+                disabled={isSubmitting || pendingAction !== null}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-md bg-[#2568b2] hover:bg-[#1e5494] text-white text-xs font-medium transition-colors cursor-pointer shadow-md disabled:opacity-50"
+              >
+                {pendingAction === 'modify' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                )}
+                <span>Apply Custom Plan &amp; Start</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleResetToOriginal}
+                disabled={isSubmitting || pendingAction !== null}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                title="Discard edits and restore original plan"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Reset Edits</span>
+              </button>
+            </>
           ) : (
             <button
               type="button"
@@ -318,7 +365,7 @@ export const PlanSteeringCard: React.FC<PlanSteeringCardProps> = ({
                     ))}
 
                     {/* Quick Add Tag Input */}
-                    <div className="inline-flex items-center">
+                    <div className="inline-flex items-center space-x-1">
                       <input
                         type="text"
                         value={newTagInput[subqId] || ''}
@@ -329,9 +376,19 @@ export const PlanSteeringCard: React.FC<PlanSteeringCardProps> = ({
                             handleAddQueryTag(sIdx);
                           }
                         }}
-                        placeholder="+ query"
-                        className="bg-[#131217] border border-[#222224] focus:border-[#4a8ad6] rounded px-2 py-0.5 text-[11px] text-white placeholder-[#8a8c92]/50 focus:outline-none w-24"
+                        placeholder="+ query keyword"
+                        className="bg-[#131217] border border-[#222224] focus:border-[#4a8ad6] rounded px-2 py-0.5 text-[11px] text-white placeholder-[#8a8c92]/50 focus:outline-none w-28"
                       />
+                      <button
+                        type="button"
+                        onClick={() => handleAddQueryTag(sIdx)}
+                        disabled={!(newTagInput[subqId] || '').trim()}
+                        className="px-1.5 py-0.5 rounded bg-[#212023] hover:bg-[#2a292e] text-[#4a8ad6] hover:text-white border border-[#2b2a30] disabled:opacity-30 disabled:cursor-not-allowed transition-colors text-[11px] flex items-center space-x-0.5"
+                        title="Add query keyword"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add</span>
+                      </button>
                     </div>
                   </div>
                 </div>

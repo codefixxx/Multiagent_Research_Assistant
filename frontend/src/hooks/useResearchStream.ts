@@ -133,7 +133,10 @@ export function useResearchStream() {
 
         case 'node_start':
           if (payload.node === 'planner') setPlannerState('active');
-          if (payload.node === 'consolidator') setConsolidatorState('active');
+          if (payload.node === 'consolidator') {
+            setSubQuestions(prev => prev.map(w => ({ ...w, status: 'completed' })));
+            setConsolidatorState('active');
+          }
           if (payload.node === 'writer') setWriterState('active');
           appendLog(payload.node?.toUpperCase() || 'NODE', 'Step initiated', 'system');
           break;
@@ -146,6 +149,9 @@ export function useResearchStream() {
 
         case 'awaiting_plan_approval': {
           setStatus('awaiting_approval');
+          setPlannerState('active');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
           const plan = payload.plan;
           if (plan) {
             setJobData(prev => ({
@@ -170,10 +176,34 @@ export function useResearchStream() {
 
         case 'planner_completed':
         case 'plan_created': {
-          setPlannerState('completed');
-          setConsolidatorState('active');
-          setStatus('researching');
+          const isAwaiting = payload.status === 'awaiting_approval';
+          setPlannerState(isAwaiting ? 'active' : 'completed');
+          setConsolidatorState('waiting');
+          if (isAwaiting) {
+            setStatus('awaiting_approval');
+          } else {
+            setStatus('researching');
+          }
           const subqs = payload.sub_questions || (payload.plan && payload.plan.sub_questions) || [];
+          if (subqs.length > 0) {
+            setSubQuestions(subqs.map((q: any, idx: number) => ({
+              id: typeof q === 'string' ? `worker_${idx + 1}` : (q.id || `subq_${idx + 1}`),
+              text: typeof q === 'string' ? q : (q.sub_question || q.question || 'Sub-question investigation'),
+              status: isAwaiting ? 'waiting' : 'active',
+              findingsCount: 0,
+            })));
+          }
+          appendLog('PLANNER', `Formulated ${subqs.length} parallel research streams`, 'planner');
+          break;
+        }
+
+        case 'plan_approved': {
+          setStatus('researching');
+          setPlannerState('completed');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          const plan = payload.plan;
+          const subqs = payload.sub_questions || (plan && plan.sub_questions) || [];
           if (subqs.length > 0) {
             setSubQuestions(subqs.map((q: any, idx: number) => ({
               id: typeof q === 'string' ? `worker_${idx + 1}` : (q.id || `subq_${idx + 1}`),
@@ -181,8 +211,28 @@ export function useResearchStream() {
               status: 'active',
               findingsCount: 0,
             })));
+          } else {
+            setSubQuestions(prev => prev.map(w => ({ ...w, status: 'active' })));
           }
-          appendLog('PLANNER', `Formulated ${subqs.length} parallel research streams`, 'planner');
+          appendLog('PLANNER', 'Plan approved. Initiating parallel web research streams.', 'planner');
+          break;
+        }
+
+        case 'job_cancelled': {
+          setStatus('cancelled');
+          setIsDispatching(false);
+          stopTimer();
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          setSubQuestions(prev => prev.map(w => ({ ...w, status: 'waiting' })));
+          setJobData(prev => ({
+            ...(prev || { run_id: currentRunId || '', query: '', status: 'cancelled' }),
+            status: 'cancelled',
+            report: null,
+            rag_score: null,
+            error_message: null,
+          }));
+          appendLog('SYSTEM', 'Investigation cancelled by user', 'system');
           break;
         }
 
@@ -298,6 +348,7 @@ export function useResearchStream() {
       const namedEvents = [
         'job_started',
         'awaiting_plan_approval',
+        'plan_approved',
         'planner_completed',
         'plan_created',
         'researching_subquestion',
@@ -308,6 +359,7 @@ export function useResearchStream() {
         'writing_completed',
         'report_synthesized',
         'job_completed',
+        'job_cancelled',
         'budget_exceeded',
         'job_failed',
         'node_start',
@@ -339,21 +391,30 @@ export function useResearchStream() {
         if (!res.ok) return;
         const data: ResearchJobData = await res.json();
         
-        if (data.status === 'failed' || data.status === 'cancelled') {
+        if (data.status === 'failed') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           if (eventSourceRef.current) eventSourceRef.current.close();
-          setStatus(data.status);
+          setStatus('failed');
           setIsDispatching(false);
           stopTimer();
           setJobData(data);
           if (data.error_message) {
             appendLog('SYSTEM', `Run failed: ${data.error_message}`, 'error');
-          } else if (data.status === 'cancelled') {
-            appendLog('SYSTEM', 'Run cancelled by user', 'system');
           }
           if (data.error_suggestion) {
             appendLog('SYSTEM', `💡 Actionable fix: ${data.error_suggestion}`, 'system');
           }
+        } else if (data.status === 'cancelled') {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          if (eventSourceRef.current) eventSourceRef.current.close();
+          setStatus('cancelled');
+          setIsDispatching(false);
+          stopTimer();
+          setJobData(data);
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          setSubQuestions(prev => prev.map(w => ({ ...w, status: 'waiting' })));
+          appendLog('SYSTEM', 'Investigation cancelled by user', 'system');
         } else if (data.status === 'completed' || data.status === 'budget_exceeded') {
           if (data.report && (data.report.title || data.report.markdown_output)) {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -362,6 +423,9 @@ export function useResearchStream() {
           }
         } else if (data.status === 'awaiting_approval') {
           setStatus('awaiting_approval');
+          setPlannerState('active');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
           setJobData(data);
         } else {
           // Reconcile in-progress status
@@ -473,15 +537,40 @@ export function useResearchStream() {
       if (action === 'approve' || action === 'modify') {
         setStatus('researching');
         setPlannerState('completed');
-        setConsolidatorState('active');
+        setConsolidatorState('waiting');
+        setWriterState('waiting');
+        if (modifiedPlan && modifiedPlan.sub_questions && modifiedPlan.sub_questions.length > 0) {
+          setSubQuestions(modifiedPlan.sub_questions.map((q, idx) => ({
+            id: q.id || `subq_${idx + 1}`,
+            text: q.question,
+            status: 'active',
+            findingsCount: 0,
+          })));
+          setJobData(prev => prev ? { ...prev, plan: modifiedPlan, status: 'researching' } : null);
+        } else {
+          setSubQuestions(prev => prev.map(w => ({ ...w, status: 'active' })));
+        }
       } else if (action === 'regenerate') {
         setStatus('planning');
         setPlannerState('active');
+        setConsolidatorState('waiting');
+        setWriterState('waiting');
+        setSubQuestions([]);
         appendLog('PLANNER', 'Re-planning with user constraints...', 'planner');
       } else if (action === 'reject') {
         setStatus('cancelled');
         setIsDispatching(false);
         stopTimer();
+        setJobData(prev => ({
+          ...(prev || { run_id: currentRunId || '', query: '', status: 'cancelled' }),
+          status: 'cancelled',
+          report: null,
+          rag_score: null,
+          error_message: null
+        }));
+        setConsolidatorState('waiting');
+        setWriterState('waiting');
+        setSubQuestions(prev => prev.map(w => ({ ...w, status: 'waiting' })));
         appendLog('SYSTEM', 'Investigation cancelled by user', 'system');
       }
 
@@ -533,6 +622,19 @@ export function useResearchStream() {
           setPlannerState('completed');
           setConsolidatorState('completed');
           setWriterState('completed');
+          loadTrace(runId);
+        } else if (data.status === 'cancelled') {
+          setPlannerState('completed');
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          if (data.plan?.sub_questions) {
+            setSubQuestions(data.plan.sub_questions.map((q, idx) => ({
+              id: q.id || `subq_${idx + 1}`,
+              text: q.question,
+              status: 'waiting',
+              findingsCount: 0
+            })));
+          }
           loadTrace(runId);
         } else if (data.status !== 'failed') {
           connectSSE(runId);

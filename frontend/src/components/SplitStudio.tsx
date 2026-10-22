@@ -286,10 +286,11 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
 
         {/* Source Verification Audit Ledger */}
         {(() => {
-          const grade = ragScore?.grade || ragScore?.composite_grade || null;
-          const groundednessPct = ragScore ? Math.round((ragScore.groundedness_score ?? 0) * 100) : null;
-          const precisionPct = ragScore ? Math.round((ragScore.citation_precision ?? ragScore.citation_precision_score ?? 0) * 100) : null;
-          const coveragePct = ragScore ? Math.round((ragScore.coverage_score ?? ragScore.subquestion_coverage_score ?? 0) * 100) : null;
+          const isCancelled = jobData?.status === 'cancelled';
+          const grade = isCancelled ? null : (ragScore?.grade || ragScore?.composite_grade || null);
+          const groundednessPct = isCancelled ? null : (ragScore ? Math.round((ragScore.groundedness_score ?? 0) * 100) : null);
+          const precisionPct = isCancelled ? null : (ragScore ? Math.round((ragScore.citation_precision ?? ragScore.citation_precision_score ?? 0) * 100) : null);
+          const coveragePct = isCancelled ? null : (ragScore ? Math.round((ragScore.coverage_score ?? ragScore.subquestion_coverage_score ?? 0) * 100) : null);
 
           return (
             <div className="p-4.5 rounded-md bg-[#131217] border border-[#222224] space-y-3.5">
@@ -299,13 +300,15 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                   <span>Source Verification</span>
                 </div>
                 <span className={`px-2.5 py-0.5 rounded text-[13px] font-medium ${
-                  grade === 'A+' || grade === 'A'
+                  isCancelled
+                    ? 'bg-[#212023] text-[#8a8c92]'
+                    : grade === 'A+' || grade === 'A'
                     ? 'bg-[#1b2828] text-[#5fc39c] border border-[#44a282]/30'
                     : grade
                     ? 'bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/30'
                     : 'bg-[#212023] text-[#8a8c92]'
                 }`}>
-                  {grade ? `Grade ${grade}` : 'Pending'}
+                  {isCancelled ? 'Cancelled' : grade ? `Grade ${grade}` : 'Pending'}
                 </span>
               </div>
 
@@ -484,6 +487,48 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                     initialPlan={jobData.plan}
                     onSteer={onSteerPlan || (async () => false)}
                   />
+                </div>
+              ) : jobData?.status === 'cancelled' ? (
+                <div className="py-8 px-4 max-w-xl mx-auto space-y-4 animate-in fade-in duration-200">
+                  <div className="p-5 sm:p-6 rounded-lg border bg-[#1a1820] border-[#34323e]">
+                    <div className="flex items-start space-x-3.5 mb-3.5">
+                      <div className="p-2.5 rounded-md shrink-0 bg-[#e5566f]/15 text-[#e5566f]">
+                        <XCircle className="w-5 h-5 stroke-[2]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-sm sm:text-base text-white">
+                            Investigation Cancelled
+                          </h3>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-[#e5566f]/20 text-[#e5566f] border border-[#e5566f]/30">
+                            CANCELLED_BY_USER
+                          </span>
+                        </div>
+                        {jobData.query && (
+                          <p className="text-xs text-[#8a8c92] mt-1 line-clamp-1">
+                            Topic: &quot;{jobData.query}&quot;
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="bg-[#131217] p-3.5 rounded-md border border-[#222224] text-xs text-white/80 leading-relaxed mb-4">
+                      You declined or stopped the proposed research strategy during the plan review phase. No web searches were dispatched and no API token budget was consumed.
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-[#222224]">
+                      {onRetry && (
+                        <button
+                          type="button"
+                          onClick={onRetry}
+                          className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-md bg-[#2568b2] hover:bg-[#1e5494] text-white text-xs font-medium transition-colors cursor-pointer shadow-sm"
+                        >
+                          <RefreshCw className="w-3.5 h-3.5 text-white" />
+                          <span>Restart Investigation</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ) : jobData?.status === 'failed' || jobData?.error_message ? (
                 <div className="py-8 px-4 max-w-xl mx-auto space-y-4 animate-in fade-in duration-200">

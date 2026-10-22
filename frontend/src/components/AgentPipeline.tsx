@@ -1,6 +1,5 @@
-import React from 'react';
-import type { SubQuestionItem } from '../types';
-import { CheckCircle2, Loader2, Clock } from 'lucide-react';
+import type { SubQuestionItem, JobStatus } from '../types';
+import { CheckCircle2, Loader2, Clock, XCircle } from 'lucide-react';
 
 interface AgentPipelineProps {
   plannerState: 'waiting' | 'active' | 'completed';
@@ -8,6 +7,7 @@ interface AgentPipelineProps {
   writerState: 'waiting' | 'active' | 'completed';
   workers: SubQuestionItem[];
   isAwaitingApproval?: boolean;
+  status?: JobStatus;
 }
 
 export const AgentPipeline: React.FC<AgentPipelineProps> = ({
@@ -15,35 +15,45 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
   consolidatorState,
   writerState,
   workers,
-  isAwaitingApproval = false
+  isAwaitingApproval = false,
+  status = 'idle'
 }) => {
-  const isResearching = workers.some(w => w.status === 'active' || w.status === 'revision');
-  const isResearchDone = workers.length > 0 && workers.every(w => w.status === 'completed');
+  const isCancelled = status === 'cancelled';
+  const isResearching = !isCancelled && workers.some(w => w.status === 'active' || w.status === 'revision');
+  const isResearchDone = !isCancelled && workers.length > 0 && workers.every(w => w.status === 'completed');
 
   const steps = [
     {
       num: '1',
       title: 'Planning',
-      desc: isAwaitingApproval ? 'Plan formulated — awaiting review' : 'Formulating search strategy',
+      desc: isAwaitingApproval
+        ? 'Plan formulated — awaiting review'
+        : isCancelled
+        ? 'Planning phase completed'
+        : 'Formulating search strategy',
       state: plannerState,
     },
     {
       num: '2',
       title: 'Searching Web',
-      desc: workers.length > 0 ? `${workers.length} parallel inquiries` : 'Gathering web sources',
-      state: isResearching ? 'active' : isResearchDone ? 'completed' : 'waiting',
+      desc: isCancelled
+        ? 'Cancelled before retrieval'
+        : workers.length > 0
+        ? `${workers.length} parallel inquiries`
+        : 'Gathering web sources',
+      state: isCancelled ? 'cancelled' : isResearching ? 'active' : isResearchDone ? 'completed' : 'waiting',
     },
     {
       num: '3',
       title: 'Verifying Facts',
-      desc: 'Cross-checking source claims',
-      state: consolidatorState,
+      desc: isCancelled ? 'Cancelled before verification' : 'Cross-checking source claims',
+      state: isCancelled ? 'cancelled' : consolidatorState,
     },
     {
       num: '4',
       title: 'Writing Report',
-      desc: 'Synthesizing final document',
-      state: writerState,
+      desc: isCancelled ? 'Cancelled before synthesis' : 'Synthesizing final document',
+      state: isCancelled ? 'cancelled' : writerState,
     },
   ];
 
@@ -56,7 +66,9 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
             Research progress
           </span>
           <span className="text-[#8a8c92] text-xs">
-            {isAwaitingApproval
+            {isCancelled
+              ? '⛔ Investigation cancelled by user'
+              : isAwaitingApproval
               ? '🎯 Plan formulated — review & steering required to proceed'
               : writerState === 'completed'
               ? 'Research complete'
@@ -76,8 +88,9 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           {steps.map((step) => {
             const isStep1Awaiting = isAwaitingApproval && step.num === '1';
-            const isActive = step.state === 'active' || isStep1Awaiting;
-            const isCompleted = step.state === 'completed' && !isStep1Awaiting;
+            const isStepCancelled = step.state === 'cancelled';
+            const isActive = !isCancelled && (step.state === 'active' || isStep1Awaiting);
+            const isCompleted = !isCancelled && step.state === 'completed' && !isStep1Awaiting;
 
             return (
               <div
@@ -85,6 +98,8 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
                 className={`p-3.5 rounded-md border transition-colors ${
                   isStep1Awaiting
                     ? 'bg-[#171719] border-[#d9a441] border-b-2'
+                    : isStepCancelled
+                    ? 'bg-[#171719] border-[#1b1a1f] opacity-60'
                     : isActive
                     ? 'bg-[#171719] border-[#4a8ad6] border-b-2'
                     : isCompleted
@@ -99,6 +114,11 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
                   {isStep1Awaiting ? (
                     <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#d9a441]/20 text-[#d9a441] border border-[#d9a441]/30">
                       <span>Reviewing Plan</span>
+                    </span>
+                  ) : isStepCancelled ? (
+                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs text-[#8a8c92]/60 bg-[#212023]/60">
+                      <XCircle className="w-3 h-3 text-[#e5566f]/70" />
+                      <span>Cancelled</span>
                     </span>
                   ) : isActive ? (
                     <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#1c2738] text-[#4a8ad6]">

@@ -40,6 +40,33 @@ def test_route_after_planner():
     assert route_after_planner(ResearchState(plan=None)) == "failed"
 
 
+def test_route_after_planner_preserves_curated_subquestions_when_approved():
+    # If user curated 3 sub-questions with max_sub_questions=2 and approved, do not slice
+    plan = ResearchPlan(
+        query="Test query",
+        objective="Test objective",
+        sub_questions=[
+            SubQuestion(id="sq_1", question="Q1", rationale="R1"),
+            SubQuestion(id="sq_2", question="Q2", rationale="R2"),
+            SubQuestion(id="sq_3", question="Q3", rationale="R3"),
+        ],
+    )
+    # When plan_approved is False or not present, it slices to max_sub_questions
+    unapproved_state = ResearchState(
+        plan=plan, run_id="run_1", query="Q", max_sub_questions=2, plan_approved=False
+    )
+    unapproved_decision = route_after_planner(unapproved_state)
+    assert len(unapproved_decision) == 2
+
+    # When plan_approved is True (user curated and approved), it preserves all 3
+    approved_state = ResearchState(
+        plan=plan, run_id="run_1", query="Q", max_sub_questions=2, plan_approved=True
+    )
+    approved_decision = route_after_planner(approved_state)
+    assert len(approved_decision) == 3
+    assert approved_decision[2].arg["sub_question"].id == "sq_3"
+
+
 def test_route_after_consolidator():
     # Normal state with findings routes to writer
     plan = ResearchPlan(
