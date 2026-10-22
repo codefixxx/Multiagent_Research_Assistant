@@ -197,7 +197,13 @@ class RedisRunManager:
     def _steps_key(self, run_id: str) -> str:
         return f"research:run:{run_id}:steps"
 
-    async def init_run(self, run_id: str, query: str, focus_mode: str = "general") -> dict[str, Any]:
+    async def init_run(
+        self,
+        run_id: str,
+        query: str,
+        focus_mode: str = "general",
+        hitl_enabled: bool = False,
+    ) -> dict[str, Any]:
         """Initialize metadata for a new research run."""
         now = datetime.now(UTC).isoformat()
         metadata = {
@@ -208,6 +214,7 @@ class RedisRunManager:
             "step_count": 0,
             "total_tokens": 0,
             "focus_mode": focus_mode,
+            "hitl_enabled": hitl_enabled,
             "created_at": now,
             "updated_at": now,
             "error_message": None,
@@ -339,8 +346,43 @@ class RedisRunManager:
     def _report_key(self, run_id: str) -> str:
         return f"research:run:{run_id}:report"
 
+    def _plan_key(self, run_id: str) -> str:
+        return f"research:run:{run_id}:plan"
+
+    def _steer_key(self, run_id: str) -> str:
+        return f"research:run:{run_id}:steer"
+
     def _trace_key(self, run_id: str) -> str:
         return f"research:run:{run_id}:trace"
+
+    async def save_plan(self, run_id: str, plan_data: dict[str, Any] | str) -> None:
+        """Cache the decomposed research plan for inspection or human steering."""
+        payload = plan_data if isinstance(plan_data, str) else json.dumps(plan_data, default=str)
+        if self.default_ttl and self.default_ttl > 0:
+            await self.redis.set(self._plan_key(run_id), payload, ex=self.default_ttl)
+        else:
+            await self.redis.set(self._plan_key(run_id), payload)
+
+    async def get_plan(self, run_id: str) -> dict[str, Any] | None:
+        """Retrieve the cached research plan."""
+        raw = await self.redis.get(self._plan_key(run_id))
+        if not raw:
+            return None
+        data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        return json.loads(data_str)
+
+    async def save_steer_decision(self, run_id: str, decision: dict[str, Any]) -> None:
+        """Store user steering action in Redis."""
+        payload = json.dumps(decision, default=str)
+        await self.redis.set(self._steer_key(run_id), payload, ex=1800)
+
+    async def get_steer_decision(self, run_id: str) -> dict[str, Any] | None:
+        """Retrieve pending or submitted user steering action."""
+        raw = await self.redis.get(self._steer_key(run_id))
+        if not raw:
+            return None
+        data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+        return json.loads(data_str)
 
     async def record_completed_step(
         self,

@@ -222,3 +222,62 @@ async def test_get_research_history_endpoint(client):
     assert item["has_report"] is False  # newly submitted run has no report yet
 
 
+@pytest.mark.asyncio
+async def test_steer_plan_endpoint(client, mock_llm):
+    """POST /research/{run_id}/steer accepts human steering actions."""
+    from src.api.job_runner import job_service
+    await job_service.initialize()
+    run_id = "test-hitl-steer-01"
+
+    # 1. Initialize run in awaiting_approval status
+    assert job_service.run_manager is not None
+    await job_service.run_manager.init_run(
+        run_id=run_id,
+        query="Distributed Cache Consensus",
+        hitl_enabled=True,
+    )
+    await job_service.run_manager.update_run_status(
+        run_id=run_id,
+        status="awaiting_approval",
+        current_node="plan_gate",
+    )
+
+    # 2. Test approve action
+    approve_res = await client.post(
+        f"/research/{run_id}/steer",
+        json={"action": "approve"},
+    )
+    assert approve_res.status_code == 200
+    approve_data = approve_res.json()
+    assert approve_data["action"] == "approve"
+    assert approve_data["status"] == "accepted"
+
+    # 3. Test modify action with customized sub-questions
+    modified_plan = {
+        "objective": "Targeted Latency Investigation",
+        "sub_questions": [
+            {
+                "id": "sq_custom_1",
+                "question": "What is the P99 tail latency of Redis Cluster?",
+                "rationale": "Empirical latency profile",
+                "search_queries": ["Redis Cluster P99 tail latency benchmark"],
+            }
+        ],
+    }
+    modify_res = await client.post(
+        f"/research/{run_id}/steer",
+        json={"action": "modify", "modified_plan": modified_plan},
+    )
+    assert modify_res.status_code == 200
+    modify_data = modify_res.json()
+    assert modify_data["action"] == "modify"
+    assert modify_data["status"] == "accepted"
+
+    # 4. Non-existent run should return 400
+    bad_res = await client.post(
+        "/research/non-existent-run-999/steer",
+        json={"action": "approve"},
+    )
+    assert bad_res.status_code == 400
+
+

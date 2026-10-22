@@ -17,6 +17,7 @@ export function App() {
     logs,
     subQuestions,
     activeSpans,
+    status,
     isDispatching,
     plannerState,
     consolidatorState,
@@ -28,6 +29,7 @@ export function App() {
     ragScore,
     formattedTimer,
     dispatchInvestigation,
+    steerPlan,
     loadRun,
   } = useResearchStream();
 
@@ -59,7 +61,8 @@ export function App() {
     subQuestionsCount: number,
     timeLimitSec: number,
     deepScrape: boolean,
-    focusMode: string = 'general'
+    focusMode: string = 'general',
+    hitlEnabled: boolean = false
   ) => {
     dispatchInvestigation(
       query,
@@ -68,7 +71,8 @@ export function App() {
       deepScrape,
       activeModelMatrix,
       activeApiKeys,
-      focusMode
+      focusMode,
+      hitlEnabled
     );
   };
 
@@ -108,6 +112,7 @@ export function App() {
           consolidatorState={consolidatorState}
           writerState={writerState}
           workers={subQuestions}
+          isAwaitingApproval={status === 'awaiting_approval'}
         />
 
         {/* Dual Canvas Studio */}
@@ -121,6 +126,7 @@ export function App() {
           spans={activeSpans}
           onSelectCitation={(citation) => setSelectedCitation(citation)}
           onOpenSettings={() => setIsSettingsOpen(true)}
+          onSteerPlan={steerPlan}
           onRetry={() => {
             if (jobData?.query) {
               handleDispatch(jobData.query, 2, 120, true);

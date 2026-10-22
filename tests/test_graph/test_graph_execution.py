@@ -128,3 +128,68 @@ async def test_deep_research_gap_filler_executes_on_unanswered_subquestions():
     assert "gap_filler" in agent_names
     assert len(final_state["findings"]) >= 1
     assert any(f.id == "find_recovered" for f in final_state["findings"])
+
+
+@pytest.mark.asyncio
+async def test_graph_human_in_the_loop_steering(mock_llm):
+    """Verify Human-in-the-Loop plan gate: pauses execution, accepts modified plan, and proceeds."""
+    import asyncio
+    from src.api.job_runner import job_service
+    from src.schemas.plan import ResearchPlan, SubQuestion
+
+    await job_service.initialize(force_new=True)
+    run_id = "test-graph-hitl-01"
+
+    assert job_service.run_manager is not None
+    await job_service.run_manager.init_run(
+        run_id=run_id,
+        query="Vector database architectural tradeoffs",
+        hitl_enabled=True,
+    )
+
+    graph = compile_research_graph(llm=mock_llm, run_manager=job_service.run_manager)
+    initial_state = create_initial_state(
+        query="Vector database architectural tradeoffs",
+        run_id=run_id,
+        hitl_enabled=True,
+    )
+
+    # Launch graph in background task
+    task = asyncio.create_task(graph.ainvoke(initial_state))
+
+    # Wait until planner node has saved the plan and paused at plan_gate
+    for _ in range(30):
+        plan_in_db = await job_service.run_manager.get_plan(run_id)
+        if plan_in_db is not None:
+            break
+        await asyncio.sleep(0.1)
+
+    # Steer plan with customized sub-question
+    custom_plan = ResearchPlan(
+        query="Vector database architectural tradeoffs",
+        objective="Analyze disk-backed indexing vs RAM memory usage",
+        sub_questions=[
+            SubQuestion(
+                id="sq_steered_1",
+                question="What is the RAM overhead of HNSW graphs?",
+                rationale="Evaluate memory scaling bottlenecks",
+                search_queries=["HNSW memory footprint per 1M vectors"],
+            )
+        ],
+    )
+
+    # Submit human decision to resume graph
+    await job_service.submit_plan_decision(
+        run_id=run_id,
+        action="modify",
+        modified_plan=custom_plan,
+    )
+
+    final_state = await task
+
+    assert final_state["status"] == "completed"
+    assert final_state["plan_approved"] is True
+    # The final plan in state matches the steered plan
+    assert len(final_state["plan"].sub_questions) == 1
+    assert final_state["plan"].sub_questions[0].id == "sq_steered_1"
+    assert "HNSW" in final_state["plan"].sub_questions[0].question

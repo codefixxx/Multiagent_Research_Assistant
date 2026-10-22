@@ -47,6 +47,16 @@ def _normalize_plan(raw_plan: Any) -> Any:
     return raw_plan
 
 
+def route_after_plan_gate(state: ResearchState) -> list[Send] | str:
+    """Determine edge routing following human-in-the-loop plan gate evaluation."""
+    if state.get("status") in ("cancelled", "failed"):
+        return "failed"
+    if not state.get("plan_approved", True):
+        # User requested plan regeneration with steering guidance
+        return "planner"
+    return route_after_planner(state)
+
+
 def route_after_planner(state: ResearchState) -> list[Send] | str:
     """Determine the next step after the planner node completes.
 

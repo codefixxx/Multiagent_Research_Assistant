@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.core.telemetry import RunCostSummary, TokenUsage
+from src.schemas.plan import ResearchPlan
 from src.schemas.report import ResearchReport
 from src.schemas.trace import StepTrace
 from src.validators.citation_validator import CitationValidationResult
@@ -66,6 +67,10 @@ class ResearchRequest(BaseModel):
         default="general",
         description="Domain focus mode: 'general', 'academic' (scholarly literature/arXiv), 'technical' (architecture/code/benchmarks), or 'financial' (SEC filings/earnings/market).",
     )
+    hitl_enabled: bool = Field(
+        default=False,
+        description="When True, pauses execution after research planning to allow human review, editing, or regeneration before parallel research fans out.",
+    )
     model_matrix: ModelMatrixConfig | None = Field(
         default=None,
         description="Optional custom model assignments per agent role.",
@@ -74,6 +79,38 @@ class ResearchRequest(BaseModel):
         default=None,
         description="Optional ephemeral user API keys for BYOK execution.",
     )
+
+
+class PlanSteerAction(str):
+    APPROVE = "approve"
+    MODIFY = "modify"
+    REGENERATE = "regenerate"
+    REJECT = "reject"
+
+
+class PlanSteerRequest(BaseModel):
+    """User steering instruction to approve, edit, or regenerate a research plan."""
+
+    action: str = Field(
+        description="Steering action: 'approve' (continue as-is), 'modify' (continue with modified_plan), 'regenerate' (re-plan with feedback), or 'reject' (cancel).",
+    )
+    modified_plan: ResearchPlan | None = Field(
+        default=None,
+        description="Curated ResearchPlan containing user-modified or newly added sub-questions if action is 'modify'.",
+    )
+    feedback: str | None = Field(
+        default=None,
+        description="Human steering feedback or prompt guidance for re-planning if action is 'regenerate'.",
+    )
+
+
+class PlanSteerResponse(BaseModel):
+    """Result of submitting a plan steering action."""
+
+    run_id: str
+    action: str
+    status: str
+    message: str
 
 
 class ResearchSubmissionResponse(BaseModel):
@@ -106,11 +143,13 @@ class ResearchStatusResponse(BaseModel):
     step_count: int = 0
     total_tokens: int = 0
     findings_count: int = 0
+    plan: ResearchPlan | None = Field(default=None, description="Decomposed research plan (available during review and completion).")
     report: ResearchReport | None = None
     citation_validation: CitationValidationResult | None = None
     cost_summary: RunCostSummary | None = None
     rag_score: RAGQualityScore | None = None
     focus_mode: str | None = Field(default="general", description="Focus mode configured for the run.")
+    hitl_enabled: bool = Field(default=False, description="Whether Human-in-the-Loop review is active for this run.")
     error_message: str | None = None
     error_code: str | None = None
     error_suggestion: str | None = None

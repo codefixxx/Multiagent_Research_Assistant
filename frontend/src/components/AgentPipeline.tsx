@@ -7,13 +7,15 @@ interface AgentPipelineProps {
   consolidatorState: 'waiting' | 'active' | 'completed';
   writerState: 'waiting' | 'active' | 'completed';
   workers: SubQuestionItem[];
+  isAwaitingApproval?: boolean;
 }
 
 export const AgentPipeline: React.FC<AgentPipelineProps> = ({
   plannerState,
   consolidatorState,
   writerState,
-  workers
+  workers,
+  isAwaitingApproval = false
 }) => {
   const isResearching = workers.some(w => w.status === 'active' || w.status === 'revision');
   const isResearchDone = workers.length > 0 && workers.every(w => w.status === 'completed');
@@ -22,7 +24,7 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
     {
       num: '1',
       title: 'Planning',
-      desc: 'Formulating search strategy',
+      desc: isAwaitingApproval ? 'Plan formulated — awaiting review' : 'Formulating search strategy',
       state: plannerState,
     },
     {
@@ -54,7 +56,9 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
             Research progress
           </span>
           <span className="text-[#8a8c92] text-xs">
-            {writerState === 'completed'
+            {isAwaitingApproval
+              ? '🎯 Plan formulated — review & steering required to proceed'
+              : writerState === 'completed'
               ? 'Research complete'
               : writerState === 'active'
               ? 'Drafting final answer...'
@@ -71,14 +75,17 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
         {/* 4-Step Stepper Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           {steps.map((step) => {
-            const isActive = step.state === 'active';
-            const isCompleted = step.state === 'completed';
+            const isStep1Awaiting = isAwaitingApproval && step.num === '1';
+            const isActive = step.state === 'active' || isStep1Awaiting;
+            const isCompleted = step.state === 'completed' && !isStep1Awaiting;
 
             return (
               <div
                 key={step.num}
                 className={`p-3.5 rounded-md border transition-colors ${
-                  isActive
+                  isStep1Awaiting
+                    ? 'bg-[#171719] border-[#d9a441] border-b-2'
+                    : isActive
                     ? 'bg-[#171719] border-[#4a8ad6] border-b-2'
                     : isCompleted
                     ? 'bg-[#171719] border-[#222224]'
@@ -89,7 +96,11 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
                   <span className="text-xs text-[#8a8c92] tabular">
                     Step {step.num}
                   </span>
-                  {isActive ? (
+                  {isStep1Awaiting ? (
+                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#d9a441]/20 text-[#d9a441] border border-[#d9a441]/30">
+                      <span>Reviewing Plan</span>
+                    </span>
+                  ) : isActive ? (
                     <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#1c2738] text-[#4a8ad6]">
                       <Loader2 className="w-3 h-3 animate-spin" />
                       <span>Working</span>

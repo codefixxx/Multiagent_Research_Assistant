@@ -8,7 +8,8 @@ interface CommandDeckProps {
     subQuestionsCount: number,
     timeLimitSec: number,
     deepScrape: boolean,
-    focusMode: string
+    focusMode: string,
+    hitlEnabled: boolean
   ) => void;
 }
 
@@ -27,11 +28,12 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
   const [timeLimit, setTimeLimit] = useState(120);
   const [deepScrape, setDeepScrape] = useState(true);
   const [focusMode, setFocusMode] = useState('general');
+  const [hitlEnabled, setHitlEnabled] = useState(false);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!query.trim() || isDispatching) return;
-    onDispatch(query.trim(), depth, timeLimit, deepScrape, focusMode);
+    onDispatch(query.trim(), depth, timeLimit, deepScrape, focusMode, hitlEnabled);
   };
 
   return (
@@ -131,6 +133,20 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
                 className="w-3.5 h-3.5 rounded border-[#222224] bg-transparent text-[#4a8ad6] focus:ring-0 cursor-pointer"
               />
               <span className="text-white/90 select-none text-[13px]">Read Full Web Pages</span>
+            </label>
+
+            {/* Review Plan Before Research (HITL) */}
+            <label className="flex items-center space-x-2 bg-[#131217] border border-[#222224] rounded-md px-3 py-1.5 cursor-pointer hover:bg-[#212023] transition-colors" title="Pause after planning to review, edit, or steer sub-topics before web research begins">
+              <input
+                type="checkbox"
+                checked={hitlEnabled}
+                onChange={(e) => setHitlEnabled(e.target.checked)}
+                disabled={isDispatching}
+                className="w-3.5 h-3.5 rounded border-[#222224] bg-transparent text-[#d9a441] focus:ring-0 cursor-pointer"
+              />
+              <span className="text-white/90 select-none text-[13px] flex items-center space-x-1.5">
+                <span>Review Plan (HITL)</span>
+              </span>
             </label>
           </div>
 

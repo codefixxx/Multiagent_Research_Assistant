@@ -32,12 +32,13 @@ class SubQuestion(BaseModel):
 class ResearchPlan(BaseModel):
     """Structured plan containing decomposed sub-questions and overall research objective."""
 
-    query: str = Field(description="The original user research question.")
+    query: str = Field(default="", description="The original user research question.")
     objective: str = Field(
-        description="Concise description of what a successful, comprehensive research report must deliver."
+        default="",
+        description="Concise description of what a successful, comprehensive research report must deliver.",
     )
     sub_questions: list[SubQuestion] = Field(
         min_length=1,
         max_length=4,
-        description="A list of 2 to 4 distinct, non-overlapping sub-questions.",
+        description="A list of 1 to 4 distinct, non-overlapping sub-questions.",
     )

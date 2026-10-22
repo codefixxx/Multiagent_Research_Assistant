@@ -24,6 +24,7 @@ from src.persistence.redis_saver import (
 )
 from src.schemas.api import AuditTraceResponse, ResearchRequest, ResearchStatusResponse
 from src.schemas.finding import FindingRecord
+from src.schemas.plan import ResearchPlan
 from src.schemas.report import ResearchReport
 from src.schemas.trace import AuditLog, StepTrace
 from src.validators.citation_validator import (
@@ -63,6 +64,8 @@ class ResearchJobService:
         self.default_llm = llm
         self.queue = queue
         self._active_tasks: dict[str, asyncio.Task[Any]] = {}
+        self._plan_approval_events: dict[str, asyncio.Event] = {}
+        self._pending_steer_actions: dict[str, dict[str, Any]] = {}
 
     async def initialize(self, force_new: bool = False, force_fake: bool = False) -> None:
         """Initialize Redis connection and dependencies if not already supplied or loop changed."""
@@ -81,13 +84,13 @@ class ResearchJobService:
                 self._current_loop = asyncio.get_running_loop()
             except Exception:
                 self._current_loop = None
-            if self.run_manager is None or force_new:
+            if self.run_manager is None or force_new or is_stale:
                 self.run_manager = RedisRunManager(client)
-            if self.idempotency_cache is None or force_new:
+            if self.idempotency_cache is None or force_new or is_stale:
                 self.idempotency_cache = NodeIdempotencyCache(client)
-            if self.checkpointer is None or force_new:
+            if self.checkpointer is None or force_new or is_stale:
                 self.checkpointer = await get_checkpointer(client)
-            if self.queue is None or force_new:
+            if self.queue is None or force_new or is_stale:
                 self.queue = RedisJobQueue(client)
             await self.broadcaster.initialize(client)
 
@@ -107,6 +110,7 @@ class ResearchJobService:
             run_id=run_id,
             query=request.query,
             focus_mode=request.focus_mode,
+            hitl_enabled=request.hitl_enabled,
         )
 
         effective_mode = mode or settings.WORKER_MODE
@@ -245,6 +249,7 @@ class ResearchJobService:
                 max_tokens=request.max_tokens,
                 deep_scrape=request.deep_scrape,
                 focus_mode=request.focus_mode,
+                hitl_enabled=request.hitl_enabled,
             )
             config: RunnableConfig = {"configurable": {"thread_id": run_id}}
 
@@ -637,7 +642,9 @@ class ResearchJobService:
         # Estimate progress percentage based on node lifecycle
         progress_pct = 10
         if status == "planning":
-            progress_pct = 20
+            progress_pct = 15
+        elif status == "awaiting_approval":
+            progress_pct = 25
         elif status == "researching":
             step = meta.get("step_count", 1)
             progress_pct = min(80, 25 + (step * 12))
@@ -673,6 +680,14 @@ class ResearchJobService:
             raw_audit.get("rag_score") if raw_audit and isinstance(raw_audit, dict) else None
         )
 
+        plan_obj: ResearchPlan | None = None
+        raw_plan = await self.run_manager.get_plan(run_id)
+        if raw_plan:
+            try:
+                plan_obj = ResearchPlan.model_validate(raw_plan)
+            except Exception:
+                pass
+
         return ResearchStatusResponse(
             run_id=run_id,
             query=meta.get("query", ""),
@@ -682,8 +697,10 @@ class ResearchJobService:
             step_count=meta.get("step_count", 0),
             total_tokens=meta.get("total_tokens", 0),
             findings_count=findings_count,
+            plan=plan_obj,
             report=report_obj,
             focus_mode=meta.get("focus_mode", "general"),
+            hitl_enabled=bool(meta.get("hitl_enabled", False)),
             cost_summary=RunCostSummary.model_validate(cost_summary_dict)
             if cost_summary_dict
             else None,
@@ -803,6 +820,96 @@ class ResearchJobService:
         await self.initialize()
         assert self.run_manager is not None
         return await self.run_manager.list_recent_runs(limit=limit, offset=offset)
+
+    async def wait_for_plan_decision(
+        self, run_id: str, timeout: float = 900.0
+    ) -> dict[str, Any]:
+        """Block graph worker until human steering action is submitted or timeout occurs."""
+        event = asyncio.Event()
+        self._plan_approval_events[run_id] = event
+
+        t0 = time.time()
+        try:
+            while time.time() - t0 < timeout:
+                if run_id in self._pending_steer_actions:
+                    return self._pending_steer_actions.pop(run_id)
+
+                if self.run_manager:
+                    redis_decision = await self.run_manager.get_steer_decision(run_id)
+                    if redis_decision:
+                        return redis_decision
+
+                if self.queue and await self.queue.is_cancelled(run_id):
+                    return {"action": "reject"}
+
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    pass
+
+            logger.warning("Plan approval timed out; automatically continuing plan", run_id=run_id)
+            return {"action": "approve"}
+        finally:
+            self._plan_approval_events.pop(run_id, None)
+
+    async def submit_plan_decision(
+        self,
+        run_id: str,
+        action: str,
+        modified_plan: ResearchPlan | None = None,
+        feedback: str | None = None,
+    ) -> bool:
+        """Process and dispatch human steering action for a run awaiting approval."""
+        await self.initialize()
+        assert self.run_manager is not None
+
+        meta = await self.run_manager.get_run_metadata(run_id) if self.run_manager else None
+        is_locally_waiting = run_id in self._plan_approval_events
+
+        if not meta and not is_locally_waiting:
+            return False
+
+        if meta:
+            current_status = meta.get("status")
+            if current_status not in ("awaiting_approval", "planning") and not is_locally_waiting:
+                logger.warning(
+                    "Cannot steer plan for run not awaiting approval",
+                    run_id=run_id,
+                    current_status=current_status,
+                )
+                return False
+
+        decision_data: dict[str, Any] = {
+            "action": action,
+            "modified_plan": (
+                modified_plan.model_dump(mode="json")
+                if hasattr(modified_plan, "model_dump")
+                else modified_plan
+            ),
+            "feedback": feedback,
+        }
+
+        # Persist decision to Redis
+        await self.run_manager.save_steer_decision(run_id, decision_data)
+
+        # Store in-memory
+        self._pending_steer_actions[run_id] = decision_data
+
+        # Notify local event listener if in-process
+        ev = self._plan_approval_events.get(run_id)
+        if ev:
+            ev.set()
+
+        # Broadcast steer event
+        await self.broadcaster.broadcast(
+            run_id=run_id,
+            event="plan_steered",
+            data={
+                "action": action,
+                "message": f"Human steering instruction received: {action.upper()}",
+            },
+        )
+        return True
 
 
 # Global singleton instance

@@ -25,6 +25,7 @@ from src.graph.budgets import can_attempt_gap_fill, evaluate_budget
 from src.graph.state import ResearchState
 from src.graph.supervisor import (
     route_after_consolidator,
+    route_after_plan_gate,
     route_after_planner,
 )
 from src.schemas.finding import FindingRecord
@@ -119,7 +120,15 @@ def build_research_graph(
         run_id = state.get("run_id", "")
         max_subqs = state.get("max_sub_questions")
         focus_mode = state.get("focus_mode", "general")
-        logger.info("Executing Planner node", step=step, query=query, max_sub_questions=max_subqs, focus_mode=focus_mode)
+        steering_feedback = state.get("steering_feedback")
+        logger.info(
+            "Executing Planner node",
+            step=step,
+            query=query,
+            max_sub_questions=max_subqs,
+            focus_mode=focus_mode,
+            has_steering=bool(steering_feedback),
+        )
 
         planner_model = (
             getattr(active_planner_llm, "model_name", None)
@@ -138,7 +147,11 @@ def build_research_graph(
                 },
             ) as span_ctx:
                 plan, tokens, latency = await plan_research(
-                    query=query, llm=active_planner_llm, max_sub_questions=max_subqs, focus_mode=focus_mode
+                    query=query,
+                    llm=active_planner_llm,
+                    max_sub_questions=max_subqs,
+                    focus_mode=focus_mode,
+                    steering_feedback=steering_feedback,
                 )
                 cost_usd = calculate_token_cost(
                     str(planner_model), tokens.prompt_tokens, tokens.completion_tokens
@@ -166,9 +179,12 @@ def build_research_graph(
 
             if run_manager and run_id:
                 try:
+                    plan_dict = plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan
+                    await run_manager.save_plan(run_id=run_id, plan_data=plan_dict)
+                    next_status = "planning" if (state.get("hitl_enabled") and not state.get("plan_approved")) else "researching"
                     await run_manager.update_run_status(
                         run_id=run_id,
-                        status="researching",
+                        status=next_status,
                         current_node="planner",
                         step_count=step,
                         total_tokens=tokens.total_tokens,
@@ -181,11 +197,12 @@ def build_research_graph(
                 except Exception as e:
                     logger.debug("Failed updating run_manager in planner", error=str(e))
 
+            next_status = "planning" if (state.get("hitl_enabled") and not state.get("plan_approved")) else "researching"
             return {
                 "plan": plan,
                 "current_sub_question_index": 0,
                 "revision_count": 0,
-                "status": "researching",
+                "status": next_status,
                 "step_count": 1,
                 "total_tokens": tokens,
                 "audit_traces": [trace],
@@ -203,6 +220,114 @@ def build_research_graph(
                 error=classified.message,
             )
             raise classified from exc
+
+    async def plan_gate_node(state: ResearchState) -> dict[str, Any]:
+        run_id = state.get("run_id", "")
+        plan = _normalize_plan(state.get("plan"))
+        hitl_enabled = state.get("hitl_enabled", False)
+
+        # If HITL review is NOT enabled, or plan was already approved, pass straight through
+        if not hitl_enabled or state.get("plan_approved", False):
+            return {"plan_approved": True, "status": "researching"}
+
+        logger.info(
+            "Plan gate activated: waiting for Human-in-the-Loop review",
+            run_id=run_id,
+            sub_questions_count=len(plan.sub_questions) if plan else 0,
+        )
+
+        plan_dict = plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan
+
+        if run_manager and run_id:
+            try:
+                await run_manager.update_run_status(
+                    run_id=run_id,
+                    status="awaiting_approval",
+                    current_node="plan_gate",
+                )
+                await run_manager.save_plan(run_id, plan_dict)
+            except Exception as e:
+                logger.debug("Failed updating run_manager in plan_gate", error=str(e))
+
+        from src.api.events import broadcaster
+        try:
+            await broadcaster.broadcast(
+                run_id=run_id,
+                event="awaiting_plan_approval",
+                data={
+                    "status": "awaiting_approval",
+                    "plan": plan_dict,
+                    "sub_questions": [
+                        sq.model_dump(mode="json") if hasattr(sq, "model_dump") else sq
+                        for sq in (plan.sub_questions if plan else [])
+                    ],
+                    "message": "Research plan formulated. Awaiting your approval or steering.",
+                },
+            )
+        except Exception as e:
+            logger.debug("Failed broadcasting awaiting_plan_approval", error=str(e))
+
+        from src.api.job_runner import job_service
+        decision = await job_service.wait_for_plan_decision(run_id=run_id, timeout=900)
+        action = decision.get("action", "approve")
+
+        if action == "modify" and decision.get("modified_plan"):
+            mod_plan = _normalize_plan(decision["modified_plan"])
+            logger.info("Human steered research plan with custom edits", run_id=run_id)
+            if run_manager and run_id:
+                try:
+                    await run_manager.save_plan(
+                        run_id,
+                        mod_plan.model_dump(mode="json") if hasattr(mod_plan, "model_dump") else mod_plan,
+                    )
+                    await run_manager.update_run_status(run_id=run_id, status="researching", current_node="researcher")
+                except Exception as e:
+                    logger.debug("Failed saving modified plan to run_manager", error=str(e))
+            return {
+                "plan": mod_plan,
+                "plan_approved": True,
+                "status": "researching",
+                "steering_feedback": None,
+            }
+
+        elif action == "regenerate":
+            feedback = decision.get("feedback", "")
+            logger.info("Human requested plan regeneration with feedback", run_id=run_id, feedback=feedback)
+            if run_manager and run_id:
+                try:
+                    await run_manager.update_run_status(run_id=run_id, status="planning", current_node="planner")
+                except Exception as e:
+                    logger.debug("Failed updating run status on regeneration", error=str(e))
+            return {
+                "plan_approved": False,
+                "steering_feedback": feedback,
+                "status": "planning",
+            }
+
+        elif action == "reject":
+            logger.warning("Human rejected research plan; cancelling execution", run_id=run_id)
+            if run_manager and run_id:
+                try:
+                    await run_manager.update_run_status(run_id=run_id, status="cancelled", error_message="Plan rejected by user.")
+                except Exception as e:
+                    logger.debug("Failed updating run status on rejection", error=str(e))
+            return {
+                "status": "cancelled",
+                "error_message": "Plan rejected by user.",
+            }
+
+        else: # approve
+            logger.info("Human approved research plan as-is", run_id=run_id)
+            if run_manager and run_id:
+                try:
+                    await run_manager.update_run_status(run_id=run_id, status="researching", current_node="researcher")
+                except Exception as e:
+                    logger.debug("Failed updating run status on approval", error=str(e))
+            return {
+                "plan_approved": True,
+                "status": "researching",
+                "steering_feedback": None,
+            }
 
     async def researcher_node(payload: Any) -> dict[str, Any]:
         raw_sq = payload.get("sub_question") if isinstance(payload, dict) else getattr(payload, "sub_question", None)
@@ -978,6 +1103,7 @@ def build_research_graph(
 
     # Register nodes
     builder.add_node("planner", planner_node)
+    builder.add_node("plan_gate", plan_gate_node)
     builder.add_node("researcher", researcher_node)  # type: ignore[arg-type]
     builder.add_node("consolidator", consolidator_node)
     builder.add_node("gap_filler", gap_filler_node)
@@ -986,11 +1112,13 @@ def build_research_graph(
 
     # Connect edges
     builder.add_edge(START, "planner")
+    builder.add_edge("planner", "plan_gate")
     builder.add_conditional_edges(
-        "planner",
-        route_after_planner,
+        "plan_gate",
+        route_after_plan_gate,
         {
             "researcher": "researcher",
+            "planner": "planner",
             "failed": END,
         },
     )
@@ -1045,6 +1173,7 @@ def create_initial_state(
     max_tokens: int | None = None,
     deep_scrape: bool = True,
     focus_mode: str = "general",
+    hitl_enabled: bool = False,
 ) -> ResearchState:
     """Initialize a clean, typed ResearchState instance for a new run."""
     return ResearchState(
@@ -1069,5 +1198,8 @@ def create_initial_state(
         max_tokens=max_tokens,
         deep_scrape=deep_scrape,
         focus_mode=focus_mode,
+        hitl_enabled=hitl_enabled,
+        plan_approved=False,
+        steering_feedback=None,
         error_message=None,
     )

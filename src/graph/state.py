@@ -13,6 +13,7 @@ from src.schemas.trace import StepTrace
 
 RunStatus = Literal[
     "planning",
+    "awaiting_approval",
     "researching",
     "gap_filling",
     "reviewing",
@@ -20,6 +21,7 @@ RunStatus = Literal[
     "completed",
     "failed",
     "budget_exceeded",
+    "cancelled",
 ]
 
 
@@ -83,6 +85,9 @@ class ResearchState(TypedDict, total=False):
     max_tokens: int | None
     deep_scrape: bool | None
     focus_mode: str | None
+    hitl_enabled: bool | None
+    plan_approved: bool | None
+    steering_feedback: str | None
 
     # Error handling
     error_message: str | None

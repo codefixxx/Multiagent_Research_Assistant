@@ -12,6 +12,8 @@ from src.schemas.api import (
     AuditTraceResponse,
     ModelValidationRequest,
     ModelValidationResponse,
+    PlanSteerRequest,
+    PlanSteerResponse,
     ResearchHistoryItem,
     ResearchHistoryResponse,
     ResearchRequest,
@@ -223,6 +225,36 @@ async def export_research_report(
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
         },
+    )
+
+
+@router.post(
+    "/{run_id}/steer",
+    response_model=PlanSteerResponse,
+    summary="Steer or approve research plan (Human-in-the-Loop)",
+    description="Submits an approval, modification, or regeneration instruction for a plan awaiting approval.",
+)
+async def steer_research_plan(
+    run_id: str,
+    steer_req: PlanSteerRequest,
+    service: ResearchJobService = Depends(get_job_service),
+) -> PlanSteerResponse:
+    success = await service.submit_plan_decision(
+        run_id=run_id,
+        action=steer_req.action,
+        modified_plan=steer_req.modified_plan,
+        feedback=steer_req.feedback,
+    )
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Run '{run_id}' is not currently awaiting plan approval or does not exist.",
+        )
+    return PlanSteerResponse(
+        run_id=run_id,
+        action=steer_req.action,
+        status="accepted",
+        message=f"Plan decision '{steer_req.action}' submitted successfully.",
     )
 
 

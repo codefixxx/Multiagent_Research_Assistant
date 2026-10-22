@@ -8,7 +8,8 @@ import type {
   RAGScore, 
   TraceSpan,
   ModelMatrix,
-  ApiKeys
+  ApiKeys,
+  ResearchPlan
 } from '../types';
 
 export function useResearchStream() {
@@ -143,6 +144,30 @@ export function useResearchStream() {
           if (payload.node === 'writer') setWriterState('completed');
           break;
 
+        case 'awaiting_plan_approval': {
+          setStatus('awaiting_approval');
+          const plan = payload.plan;
+          if (plan) {
+            setJobData(prev => ({
+              ...(prev || { run_id: currentRunId || '', query: '', status: 'awaiting_approval' }),
+              status: 'awaiting_approval',
+              plan: plan,
+              hitl_enabled: true
+            }));
+            const subqs = plan.sub_questions || [];
+            if (subqs.length > 0) {
+              setSubQuestions(subqs.map((q: any, idx: number) => ({
+                id: typeof q === 'string' ? `worker_${idx + 1}` : (q.id || `subq_${idx + 1}`),
+                text: typeof q === 'string' ? q : (q.sub_question || q.question || 'Sub-question investigation'),
+                status: 'waiting',
+                findingsCount: 0,
+              })));
+            }
+          }
+          appendLog('PLANNER', '🎯 Research plan formulated — Awaiting your review & steering decision', 'planner');
+          break;
+        }
+
         case 'planner_completed':
         case 'plan_created': {
           setPlannerState('completed');
@@ -272,6 +297,7 @@ export function useResearchStream() {
 
       const namedEvents = [
         'job_started',
+        'awaiting_plan_approval',
         'planner_completed',
         'plan_created',
         'researching_subquestion',
@@ -313,15 +339,17 @@ export function useResearchStream() {
         if (!res.ok) return;
         const data: ResearchJobData = await res.json();
         
-        if (data.status === 'failed') {
+        if (data.status === 'failed' || data.status === 'cancelled') {
           if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           if (eventSourceRef.current) eventSourceRef.current.close();
-          setStatus('failed');
+          setStatus(data.status);
           setIsDispatching(false);
           stopTimer();
           setJobData(data);
           if (data.error_message) {
             appendLog('SYSTEM', `Run failed: ${data.error_message}`, 'error');
+          } else if (data.status === 'cancelled') {
+            appendLog('SYSTEM', 'Run cancelled by user', 'system');
           }
           if (data.error_suggestion) {
             appendLog('SYSTEM', `💡 Actionable fix: ${data.error_suggestion}`, 'system');
@@ -332,6 +360,9 @@ export function useResearchStream() {
             if (eventSourceRef.current) eventSourceRef.current.close();
             finalizeRun(data);
           }
+        } else if (data.status === 'awaiting_approval') {
+          setStatus('awaiting_approval');
+          setJobData(data);
         } else {
           // Reconcile in-progress status
           setStatus(data.status);
@@ -351,7 +382,8 @@ export function useResearchStream() {
     deepScrape: boolean = true,
     modelMatrix?: ModelMatrix,
     apiKeys?: ApiKeys,
-    focusMode: string = 'general'
+    focusMode: string = 'general',
+    hitlEnabled: boolean = false
   ) => {
     // Reset workspace
     setJobData(null);
@@ -371,7 +403,8 @@ export function useResearchStream() {
 
     startTimer();
     const modeLabel = focusMode === 'general' ? '' : ` [${focusMode.toUpperCase()}]`;
-    appendLog('SYSTEM', `Dispatching${modeLabel} investigation: "${query}"`, 'system');
+    const hitlLabel = hitlEnabled ? ' (HITL Plan Review enabled)' : '';
+    appendLog('SYSTEM', `Dispatching${modeLabel} investigation: "${query}"${hitlLabel}`, 'system');
 
     try {
       const payload = {
@@ -380,6 +413,7 @@ export function useResearchStream() {
         max_wall_clock_seconds: timeLimitSec,
         deep_scrape: deepScrape,
         focus_mode: focusMode,
+        hitl_enabled: hitlEnabled,
         model_matrix: modelMatrix,
         api_keys: apiKeys
       };
@@ -427,6 +461,51 @@ export function useResearchStream() {
       stopTimer();
     }
   }, [startTimer, stopTimer, appendLog, connectSSE, startPolling]);
+
+  const steerPlan = useCallback(async (
+    action: 'approve' | 'modify' | 'regenerate' | 'reject',
+    modifiedPlan?: ResearchPlan,
+    feedback?: string
+  ) => {
+    if (!currentRunId) return false;
+    try {
+      appendLog('USER', `Plan steering decision: ${action.toUpperCase()}${feedback ? ` ("${feedback}")` : ''}`, 'system');
+      if (action === 'approve' || action === 'modify') {
+        setStatus('researching');
+        setPlannerState('completed');
+        setConsolidatorState('active');
+      } else if (action === 'regenerate') {
+        setStatus('planning');
+        setPlannerState('active');
+        appendLog('PLANNER', 'Re-planning with user constraints...', 'planner');
+      } else if (action === 'reject') {
+        setStatus('cancelled');
+        setIsDispatching(false);
+        stopTimer();
+        appendLog('SYSTEM', 'Investigation cancelled by user', 'system');
+      }
+
+      const res = await fetch(`/research/${currentRunId}/steer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          modified_plan: modifiedPlan,
+          feedback
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        appendLog('SYSTEM', `Steering failed: ${err.detail || res.statusText}`, 'error');
+        return false;
+      }
+      return true;
+    } catch (e: any) {
+      appendLog('SYSTEM', `Steering error: ${e.message}`, 'error');
+      return false;
+    }
+  }, [currentRunId, appendLog, stopTimer]);
 
   const loadRun = useCallback(async (runId: string) => {
     try {
@@ -508,6 +587,7 @@ export function useResearchStream() {
     ragScore,
     formattedTimer,
     dispatchInvestigation,
+    steerPlan,
     loadRun,
     loadTrace
   };

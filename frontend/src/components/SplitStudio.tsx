@@ -4,7 +4,9 @@ import type {
   StreamLogEntry, 
   RAGScore, 
   Citation,
+  ResearchPlan,
 } from '../types';
+import { PlanSteeringCard } from './PlanSteeringCard';
 import { marked } from 'marked';
 import { 
   FileText, 
@@ -36,6 +38,11 @@ interface SplitStudioProps {
   onSelectCitation: (citation: Citation) => void;
   onOpenSettings?: () => void;
   onRetry?: () => void;
+  onSteerPlan?: (
+    action: 'approve' | 'modify' | 'regenerate' | 'reject',
+    modifiedPlan?: ResearchPlan,
+    feedback?: string
+  ) => Promise<boolean>;
 }
 
 export const SplitStudio: React.FC<SplitStudioProps> = ({
@@ -46,7 +53,8 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
   citationsCount,
   onSelectCitation,
   onOpenSettings,
-  onRetry
+  onRetry,
+  onSteerPlan
 }) => {
   const [copied, setCopied] = React.useState(false);
 
@@ -396,6 +404,16 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                   <span>Ready</span>
                 </span>
               )}
+              {jobData?.status === 'awaiting_approval' && (
+                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-medium bg-[#d9a441]/20 text-[#d9a441] border border-[#d9a441]/35 animate-pulse">
+                  <span>Awaiting Decision</span>
+                </span>
+              )}
+              {jobData?.status === 'cancelled' && (
+                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-medium bg-[#e5566f]/20 text-[#e5566f] border border-[#e5566f]/30">
+                  <span>Cancelled</span>
+                </span>
+              )}
               {jobData?.focus_mode && jobData.focus_mode !== 'general' && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#8a5cf6]/15 text-[#a78bfa] border border-[#8a5cf6]/30">
                   {jobData.focus_mode === 'academic' && '🎓 Academic'}
@@ -460,7 +478,14 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
           {/* Body */}
           <div className="p-6 sm:p-8 flex-1 overflow-y-auto" onClick={handleContainerClick}>
             {!report ? (
-              jobData?.status === 'failed' || jobData?.error_message ? (
+              jobData?.status === 'awaiting_approval' ? (
+                <div className="py-2 max-w-3xl mx-auto">
+                  <PlanSteeringCard
+                    initialPlan={jobData.plan}
+                    onSteer={onSteerPlan || (async () => false)}
+                  />
+                </div>
+              ) : jobData?.status === 'failed' || jobData?.error_message ? (
                 <div className="py-8 px-4 max-w-xl mx-auto space-y-4 animate-in fade-in duration-200">
                   {/* Actionable Error Card Container */}
                   <div className={`p-5 sm:p-6 rounded-lg border ${errorTheme.card}`}>

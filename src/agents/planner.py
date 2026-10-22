@@ -59,6 +59,7 @@ async def plan_research(
     llm: BaseChatModel | None = None,
     max_sub_questions: int | None = None,
     focus_mode: str = "general",
+    steering_feedback: str | None = None,
 ) -> tuple[ResearchPlan, TokenUsage, float]:
     """Execute the planner specialist in isolation.
 
@@ -67,6 +68,7 @@ async def plan_research(
         llm: Optional chat model instance. If None, default model is instantiated.
         max_sub_questions: Optional maximum number of sub-questions to generate.
         focus_mode: Optional domain focus mode ('general', 'academic', 'technical', 'financial').
+        steering_feedback: Optional human steering guidance for re-planning / plan regeneration.
 
     Returns:
         Tuple of (ResearchPlan, TokenUsage, latency_ms).
@@ -82,6 +84,14 @@ async def plan_research(
         human_content += (
             f"\nCRITICAL CONSTRAINT: You must generate EXACTLY {max_sub_questions} sub-questions "
             f"(do not exceed {max_sub_questions})."
+        )
+
+    if steering_feedback and steering_feedback.strip():
+        human_content += (
+            f"\n\nHUMAN STEERING GUIDANCE & REVISION INSTRUCTIONS:\n"
+            f"The human reviewer examined the previous plan and requested these specific adjustments:\n"
+            f"\"\"\"\n{steering_feedback.strip()}\n\"\"\"\n"
+            f"You MUST follow these human steering instructions when formulating your new sub-questions."
         )
 
     prompt = ChatPromptTemplate.from_messages(

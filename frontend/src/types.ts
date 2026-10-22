@@ -2,12 +2,27 @@ export type JobStatus =
   | 'idle'
   | 'pending'
   | 'planning'
+  | 'awaiting_approval'
   | 'researching'
   | 'consolidating'
   | 'writing'
   | 'completed'
   | 'failed'
-  | 'budget_exceeded';
+  | 'budget_exceeded'
+  | 'cancelled';
+
+export interface SubQuestion {
+  id: string;
+  question: string;
+  rationale: string;
+  search_queries: string[];
+}
+
+export interface ResearchPlan {
+  query?: string;
+  objective: string;
+  sub_questions: SubQuestion[];
+}
 
 export interface ModelMatrix {
   planner: string;
@@ -112,6 +127,8 @@ export interface ResearchJobData {
   status: JobStatus;
   query: string;
   focus_mode?: string;
+  hitl_enabled?: boolean;
+  plan?: ResearchPlan | null;
   report?: ResearchReport | null;
   cost_summary?: RunCostSummary | null;
   rag_score?: RAGScore | null;
