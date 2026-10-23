@@ -156,7 +156,10 @@ if STATIC_DIR.exists():
 async def dashboard_view() -> FileResponse:
     """Serve the single-page interactive research workbench."""
     index_path = STATIC_DIR / "index.html"
-    return FileResponse(str(index_path))
+    return FileResponse(
+        str(index_path),
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+    )
 
 
 @app.get(
@@ -206,7 +209,10 @@ async def root_overview(request: Request) -> Any:
     accept = request.headers.get("accept", "")
     if "text/html" in accept:
         index_path = STATIC_DIR / "index.html"
-        return FileResponse(str(index_path))
+        return FileResponse(
+            str(index_path),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return {
         "title": "Multi-Agent Research Assistant API",
         "status": "operational",
