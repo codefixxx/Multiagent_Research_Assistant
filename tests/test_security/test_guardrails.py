@@ -99,8 +99,12 @@ def test_agent_prompts_contain_anti_injection_constitution():
         ("Reviewer", REVIEWER_SYSTEM_PROMPT),
         ("Writer", WRITER_SYSTEM_PROMPT),
     ]:
-        assert "ANTI-INJECTION CONSTITUTION" in prompt, f"{name} prompt is missing Anti-Injection Constitution"
-        assert "API keys" in prompt or "credentials" in prompt, f"{name} prompt does not restrict credentials"
+        assert "ANTI-INJECTION CONSTITUTION" in prompt, (
+            f"{name} prompt is missing Anti-Injection Constitution"
+        )
+        assert "API keys" in prompt or "credentials" in prompt, (
+            f"{name} prompt does not restrict credentials"
+        )
 
 
 def test_sanitize_text_secrets_known_and_custom_patterns():
@@ -190,7 +194,9 @@ def test_indirect_prompt_injection_simulation():
     )
 
     # Even if an LLM echoed this text into the final report:
-    raw_markdown = f"# Architecture Findings\n\n{adversarial_payload}\n\nComparative analysis continues."
+    raw_markdown = (
+        f"# Architecture Findings\n\n{adversarial_payload}\n\nComparative analysis continues."
+    )
     sanitized = sanitize_text_secrets(raw_markdown, custom_secrets=[adversarial_key])
 
     # The egress filter guarantees the secret cannot leave the server

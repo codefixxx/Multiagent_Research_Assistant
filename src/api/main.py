@@ -77,9 +77,14 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 
 @app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
     errors = exc.errors()
-    msg = "; ".join(f"{'.'.join(str(loc_part) for loc_part in err.get('loc', []))}: {err.get('msg', '')}" for err in errors)
+    msg = "; ".join(
+        f"{'.'.join(str(loc_part) for loc_part in err.get('loc', []))}: {err.get('msg', '')}"
+        for err in errors
+    )
     logger.warning("Request validation failed", path=request.url.path, validation_message=msg)
     safe_errors = [
         {

@@ -26,7 +26,11 @@ class RedisJobQueue:
     ) -> dict[str, Any]:
         """Enqueue a research job payload into the Redis queue with encrypted BYOK secrets."""
         encrypted_keys = None
-        if request.api_keys and hasattr(request.api_keys, "has_keys") and request.api_keys.has_keys():
+        if (
+            request.api_keys
+            and hasattr(request.api_keys, "has_keys")
+            and request.api_keys.has_keys()
+        ):
             from src.core.security import encrypt_secrets
 
             exposed = request.api_keys.to_exposed_dict()

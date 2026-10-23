@@ -529,7 +529,9 @@ class ResearchJobService:
                 else None
             )
             final_report = sanitize_report_secrets(final_report, custom_secrets=active_secrets)
-            findings_obj_list = sanitize_findings_secrets(findings_obj_list, custom_secrets=active_secrets)
+            findings_obj_list = sanitize_findings_secrets(
+                findings_obj_list, custom_secrets=active_secrets
+            )
 
             # Persist Report in Redis
             if final_report is not None:
