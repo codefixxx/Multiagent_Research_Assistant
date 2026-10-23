@@ -86,3 +86,41 @@ def test_research_report_markdown_compilation():
     assert "## Executive Summary" in md
     assert "## References & Citations" in md
     assert "[cite_1]" in md
+
+
+def test_citation_deep_links_and_verbatim_quote():
+    """Verify Citation model defaults and deep-link / verbatim quote support."""
+    # 1. Defaults
+    default_cite = Citation(
+        citation_id="cite_1",
+        source_url="https://example.com/docs",
+        verified_claim="Default claim",
+    )
+    assert default_cite.anchor_url == ""
+    assert default_cite.verbatim_quote == ""
+    assert default_cite.http_status == 200
+    assert default_cite.is_deep_link is True
+
+    # 2. Rich deep citation with text fragment and verbatim quote
+    deep_cite = Citation(
+        citation_id="cite_2",
+        source_url="https://redis.io/docs/latency",
+        verified_claim="Redis delivers microsecond latency for cached items.",
+        anchor_url="https://redis.io/docs/latency#:~:text=microsecond%20latency",
+        verbatim_quote="Redis operations typically complete in sub-millisecond or microsecond timescales.",
+        http_status=200,
+        is_deep_link=True,
+    )
+    assert "#:~:text=" in deep_cite.anchor_url
+    assert "microsecond timescales" in deep_cite.verbatim_quote
+    assert deep_cite.http_status == 200
+
+    # 3. Serialization to dict and JSON round-trip
+    dumped = deep_cite.model_dump()
+    assert dumped["anchor_url"] == deep_cite.anchor_url
+    assert dumped["verbatim_quote"] == deep_cite.verbatim_quote
+    assert dumped["http_status"] == 200
+    assert dumped["is_deep_link"] is True
+
+    reloaded = Citation.model_validate(dumped)
+    assert reloaded == deep_cite

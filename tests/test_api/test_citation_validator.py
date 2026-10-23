@@ -158,3 +158,42 @@ def test_validator_detects_orphaned_citation(sample_findings):
     assert result.is_valid is True
     assert "cite_2" in result.orphaned_citations
     assert "cite_1" not in result.orphaned_citations
+
+
+def test_citation_validator_preserves_deep_citation_metadata(sample_findings):
+    """Deep-link anchor URLs, verbatim quotes, and HTTP status codes must be preserved during validation."""
+    report = ResearchReport(
+        title="Grounded Report with Deep Citations",
+        executive_summary="Summary referencing Redis [cite_1].",
+        sections=[
+            ReportSection(
+                title="Performance",
+                content="Redis latency is minimal [cite_1].",
+                citation_ids=["cite_1"],
+            )
+        ],
+        citations=[
+            Citation(
+                citation_id="cite_1",
+                source_url="https://redis.io/docs/latency",
+                verified_claim="Redis cluster offers sub-millisecond read/write latency.",
+                anchor_url="https://redis.io/docs/latency#:~:text=sub-millisecond",
+                verbatim_quote="Redis operations typically complete within microseconds.",
+                http_status=200,
+                is_deep_link=True,
+            )
+        ],
+    )
+    report.compile_markdown()
+
+    result = validate_report_citations(report=report, findings=sample_findings, auto_sanitize=True)
+
+    assert result.is_valid is True
+    assert len(result.sanitized_report.citations) == 1
+    sanitized_cite = result.sanitized_report.citations[0]
+    assert sanitized_cite.anchor_url == "https://redis.io/docs/latency#:~:text=sub-millisecond"
+    assert (
+        sanitized_cite.verbatim_quote == "Redis operations typically complete within microseconds."
+    )
+    assert sanitized_cite.http_status == 200
+    assert sanitized_cite.is_deep_link is True
