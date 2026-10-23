@@ -8,7 +8,13 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 
 from src.api.events import broadcaster
@@ -20,6 +26,13 @@ from src.core.logger import logger
 from src.persistence.redis_saver import get_redis_client
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+
+def _get_base_url(request: Request) -> str:
+    """Return the authoritative public base URL without trailing slash."""
+    if settings.BASE_URL:
+        return settings.BASE_URL.rstrip("/")
+    return str(request.base_url).rstrip("/")
 
 
 @asynccontextmanager
@@ -147,12 +160,6 @@ if STATIC_DIR.exists():
     summary="Interactive Research Dashboard",
     include_in_schema=False,
 )
-@app.get(
-    "/ui",
-    tags=["UI"],
-    summary="Interactive Research Dashboard (Alias)",
-    include_in_schema=False,
-)
 async def dashboard_view() -> FileResponse:
     """Serve the single-page interactive research workbench."""
     index_path = STATIC_DIR / "index.html"
@@ -160,6 +167,78 @@ async def dashboard_view() -> FileResponse:
         str(index_path),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
+
+
+@app.get(
+    "/ui",
+    tags=["UI"],
+    summary="Interactive Research Dashboard (Canonical Redirect)",
+    include_in_schema=False,
+)
+async def ui_redirect() -> RedirectResponse:
+    """Canonical 301 redirect to consolidate indexing authority to /dashboard."""
+    return RedirectResponse(url="/dashboard", status_code=301)
+
+
+@app.get(
+    "/favicon.ico",
+    include_in_schema=False,
+)
+@app.get(
+    "/favicon.svg",
+    include_in_schema=False,
+)
+async def favicon_view() -> FileResponse:
+    """Serve the official SVG brand favicon."""
+    favicon_path = STATIC_DIR / "favicon.svg"
+    return FileResponse(str(favicon_path), media_type="image/svg+xml")
+
+
+@app.get(
+    "/robots.txt",
+    tags=["SEO"],
+    summary="Search Engine Crawling Directives",
+    include_in_schema=False,
+    response_class=PlainTextResponse,
+)
+async def robots_txt(request: Request) -> PlainTextResponse:
+    """Provide crawl instructions for search engine bots."""
+    base_url = _get_base_url(request)
+    content = (
+        "User-agent: *\n"
+        "Allow: /\n"
+        "Allow: /dashboard\n"
+        "Disallow: /research/\n"
+        "Disallow: /api/\n"
+        "Disallow: /docs\n"
+        "Disallow: /redoc\n"
+        "Disallow: /openapi.json\n\n"
+        f"Sitemap: {base_url}/sitemap.xml\n"
+    )
+    return PlainTextResponse(content=content, media_type="text/plain; charset=utf-8")
+
+
+@app.get(
+    "/sitemap.xml",
+    tags=["SEO"],
+    summary="XML Sitemap for Search Engine Discovery",
+    include_in_schema=False,
+    response_class=Response,
+)
+async def sitemap_xml(request: Request) -> Response:
+    """Provide XML sitemap listing indexable public application routes."""
+    base_url = _get_base_url(request)
+    content = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        "  <url>\n"
+        f"    <loc>{base_url}/dashboard</loc>\n"
+        "    <changefreq>weekly</changefreq>\n"
+        "    <priority>1.0</priority>\n"
+        "  </url>\n"
+        "</urlset>\n"
+    )
+    return Response(content=content, media_type="application/xml; charset=utf-8")
 
 
 @app.get(
@@ -208,11 +287,7 @@ async def root_overview(request: Request) -> Any:
     """Service description and documentation links."""
     accept = request.headers.get("accept", "")
     if "text/html" in accept:
-        index_path = STATIC_DIR / "index.html"
-        return FileResponse(
-            str(index_path),
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
-        )
+        return RedirectResponse(url="/dashboard", status_code=307)
     return {
         "title": "Multi-Agent Research Assistant API",
         "status": "operational",

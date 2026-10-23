@@ -147,15 +147,54 @@ async def test_cancel_non_running_job_returns_400(client):
 
 @pytest.mark.asyncio
 async def test_dashboard_endpoint(client):
-    """GET /dashboard and /ui return 200 with HTML content."""
+    """GET /dashboard returns 200 with HTML content, SEO metadata, and /ui redirects canonically."""
     resp = await client.get("/dashboard")
     assert resp.status_code == 200
     assert "text/html" in resp.headers.get("content-type", "")
-    assert "RESEARCH ENGINE" in resp.text
+    assert "Multi-Agent Research Assistant" in resp.text
+    assert '<meta name="robots"' in resp.text
+    assert '<link rel="canonical"' in resp.text
+    assert '<script type="application/ld+json">' in resp.text
 
-    alias_resp = await client.get("/ui")
-    assert alias_resp.status_code == 200
-    assert "text/html" in alias_resp.headers.get("content-type", "")
+    # /ui returns canonical 301 redirect to /dashboard
+    alias_resp = await client.get("/ui", follow_redirects=False)
+    assert alias_resp.status_code == 301
+    assert alias_resp.headers["location"] == "/dashboard"
+
+
+@pytest.mark.asyncio
+async def test_seo_technical_endpoints(client):
+    """Verify robots.txt, sitemap.xml, favicon, and canonical root redirect."""
+    # 1. robots.txt
+    robots_resp = await client.get("/robots.txt")
+    assert robots_resp.status_code == 200
+    assert "text/plain" in robots_resp.headers.get("content-type", "")
+    assert "User-agent: *" in robots_resp.text
+    assert "Allow: /dashboard" in robots_resp.text
+    assert "Disallow: /research/" in robots_resp.text
+    assert "Disallow: /api/" in robots_resp.text
+    assert "Sitemap:" in robots_resp.text
+
+    # 2. sitemap.xml
+    sitemap_resp = await client.get("/sitemap.xml")
+    assert sitemap_resp.status_code == 200
+    assert "application/xml" in sitemap_resp.headers.get("content-type", "")
+    assert "<loc>" in sitemap_resp.text
+    assert "/dashboard</loc>" in sitemap_resp.text
+
+    # 3. favicon routes
+    fav_svg = await client.get("/favicon.svg")
+    assert fav_svg.status_code == 200
+    assert "image/svg+xml" in fav_svg.headers.get("content-type", "")
+    assert "<svg" in fav_svg.text
+
+    fav_ico = await client.get("/favicon.ico")
+    assert fav_ico.status_code == 200
+
+    # 4. Root browser redirect to /dashboard
+    html_root = await client.get("/", headers={"accept": "text/html"}, follow_redirects=False)
+    assert html_root.status_code == 307
+    assert html_root.headers["location"] == "/dashboard"
 
 
 @pytest.mark.asyncio
@@ -163,6 +202,7 @@ async def test_static_asset_endpoint(client):
     """GET /static/styles.css returns CSS styles."""
     resp = await client.get("/static/styles.css")
     assert resp.status_code == 200
+
     assert "text/css" in resp.headers.get("content-type", "")
     assert "--bg-void" in resp.text
 

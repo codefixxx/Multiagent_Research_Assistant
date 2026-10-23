@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Compass, SlidersHorizontal, Activity, Clock } from 'lucide-react';
+import { SlidersHorizontal, Activity, Clock } from 'lucide-react';
 
 interface HeaderProps {
   tokens?: number;
@@ -46,8 +46,19 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="h-16 border-b border-[#222224] bg-[#131217] px-6 lg:px-10 flex items-center justify-between sticky top-0 z-30">
       {/* Brand Identity */}
       <div className="flex items-center space-x-2.5 sm:space-x-3 shrink-0">
-        <div className="text-[#4a8ad6] flex items-center justify-center shrink-0">
-          <Compass className="w-5 h-5 stroke-[1.75]" />
+        <div className="flex items-center justify-center shrink-0 w-6 h-6" aria-hidden="true">
+          <svg viewBox="0 0 128 128" fill="none" className="w-5 h-5">
+            <g stroke="#6366F1" strokeWidth="4" strokeLinecap="round">
+              <path d="M64 52V30M49 65L29 85M79 65L99 85" />
+            </g>
+            <g fill="#6366F1">
+              <circle cx="64" cy="22" r="10" />
+              <circle cx="23" cy="91" r="10" />
+              <circle cx="105" cy="91" r="10" />
+            </g>
+            <rect x="43" y="48" width="42" height="38" rx="12" fill="#EEF2FF" stroke="#6366F1" strokeWidth="3" />
+            <path d="M53 62H75M53 71H69" stroke="#6366F1" strokeWidth="3" strokeLinecap="round" />
+          </svg>
         </div>
         <div>
           <div className="flex items-center space-x-2">

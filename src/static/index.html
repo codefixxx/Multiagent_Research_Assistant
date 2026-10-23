@@ -3,19 +3,95 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI Research Assistant — Autonomous Verification Workbench</title>
-    <meta name="description" content="Production multi-agent intelligence workbench powered by LangGraph, durable Redis persistence, citation verification, and OpenTelemetry distributed tracing." />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/static/assets/index-C8qd_F6v.js"></script>
-    <link rel="stylesheet" crossorigin href="/static/assets/index-DToCrf8x.css">
+    <title>Multi-Agent Research Assistant — Autonomous Web Research &amp; Verification Workbench</title>
+    <meta name="description" content="Autonomous multi-agent research assistant powered by LangGraph and FastAPI. Dispatches parallel researchers, performs live web synthesis, validates citations, and generates verified dossiers." />
+    <meta name="keywords" content="AI research assistant, multi-agent research, automated research workflows, AI-powered research tools, LangGraph, citation verification, fact checking" />
+    <meta name="author" content="Multi-Agent Research Assistant" />
+    <meta name="theme-color" content="#131217" />
+    <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="/dashboard" />
+
+    <!-- Favicon & Brand Icons -->
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+    <link rel="apple-touch-icon" href="/static/favicon.svg" />
+
+    <!-- Open Graph / Social Sharing -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Multi-Agent Research Assistant" />
+    <meta property="og:title" content="Multi-Agent Research Assistant — Autonomous Web Research &amp; Verification Workbench" />
+    <meta property="og:description" content="Autonomous multi-agent research assistant powered by LangGraph and FastAPI. Dispatches parallel researchers, performs live web synthesis, validates citations, and generates verified dossiers." />
+    <meta property="og:url" content="/dashboard" />
+    <meta property="og:image" content="/static/favicon.svg" />
+    <meta property="og:image:type" content="image/svg+xml" />
+    <meta property="og:image:alt" content="Multi-Agent Research Assistant Logo" />
+
+    <!-- Twitter / X Cards -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Multi-Agent Research Assistant — Autonomous Web Research &amp; Verification Workbench" />
+    <meta name="twitter:description" content="Autonomous multi-agent research assistant powered by LangGraph and FastAPI. Dispatches parallel researchers, performs live web synthesis, validates citations, and generates verified dossiers." />
+    <meta name="twitter:image" content="/static/favicon.svg" />
+    <meta name="twitter:image:alt" content="Multi-Agent Research Assistant Logo" />
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Multi-Agent Research Assistant",
+      "applicationCategory": "ResearchApplication",
+      "operatingSystem": "All modern web browsers",
+      "url": "/dashboard",
+      "description": "Autonomous multi-agent research assistant powered by LangGraph, Redis, and FastAPI. Dispatches parallel researchers, performs live web synthesis, verifies facts, and compiles comprehensive research dossiers.",
+      "browserRequirements": "Requires JavaScript and a modern web browser",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Autonomous multi-agent research coordination",
+        "Human-in-the-Loop (HITL) plan review and steering",
+        "Parallel sub-question web search and deep page scraping",
+        "Pre-flight fact and deterministic citation verification",
+        "Deep text-fragment anchor linking and verbatim quote popovers",
+        "Multi-format dossier export (Markdown, PDF, DOCX, HTML, JSON)",
+        "Durable Redis persistence and distributed background execution"
+      ]
+    }
+    </script>
+
+    <!-- Typography (Font Loading with Preconnect & Display Swap) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script type="module" crossorigin src="/static/assets/index-pCOo-9io.js"></script>
+    <link rel="stylesheet" crossorigin href="/static/assets/index-D4upP1xN.css">
   </head>
   <body class="bg-[#171719] text-[#ffffff] antialiased selection:bg-[#4a8ad6]/25 selection:text-[#ffffff]">
     <noscript>
-      <div style="padding: 2rem; color: #fff; background: #171719; font-family: sans-serif;">
-        <h1>AI Research Assistant — RESEARCH ENGINE</h1>
-        <p>Autonomous Multi-Agent Intelligence Workbench requires JavaScript to run.</p>
+      <div style="max-width: 800px; margin: 2rem auto; padding: 2rem; color: #e1e3e6; background: #131217; border: 1px solid #222224; border-radius: 8px; font-family: 'Public Sans', system-ui, sans-serif; line-height: 1.6;">
+        <h1 style="color: #ffffff; font-size: 1.5rem; margin-bottom: 0.5rem;">Multi-Agent Research Assistant</h1>
+        <p style="color: #8a8c92; font-size: 0.95rem; margin-bottom: 1.5rem;">Autonomous Web Research &amp; Source Verification Workbench</p>
+
+        <h2 style="color: #ffffff; font-size: 1.15rem; margin-top: 1.25rem;">About the System</h2>
+        <p>The Multi-Agent Research Assistant is an automated intelligence system powered by LangGraph, FastAPI, and Redis. It orchestrates a coordinated team of specialized AI agents to execute deep, fact-checked research on any topic:</p>
+
+        <ul style="margin: 1rem 0; padding-left: 1.5rem; color: #b5b8be;">
+          <li><strong>Planner Specialist:</strong> Formulates targeted sub-questions and systematic search queries based on the research query and selected focus mode.</li>
+          <li><strong>Researcher Specialists:</strong> Fan out concurrently to search the web, scrape source articles, unblock bot-defended pages, and extract grounded evidence snippets.</li>
+          <li><strong>Reviewer Specialist:</strong> Audits collected findings against research objectives, detects knowledge gaps, and triggers iterative gap-filling cycles.</li>
+          <li><strong>Writer Specialist:</strong> Synthesizes validated findings into an executive summary and detailed thematic sections with deterministic inline citation markers.</li>
+          <li><strong>Citation &amp; Provenance Validator:</strong> Enforces pre-flight URL verification, W3C text-fragment deep anchor linking, and verbatim quote verification before report delivery.</li>
+        </ul>
+
+        <h2 style="color: #ffffff; font-size: 1.15rem; margin-top: 1.25rem;">Supported Focus Modes</h2>
+        <p>General Web, Academic &amp; Scientific Literature, Technical &amp; Engineering Documentation, and Financial &amp; Market Intelligence.</p>
+
+        <p style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid #222224; color: #8a8c92; font-size: 0.85rem;">
+          JavaScript is required to operate the interactive real-time research dashboard, monitor live DAG execution, and review plans with Human-in-the-Loop controls.
+        </p>
       </div>
     </noscript>
     <div id="root"></div>

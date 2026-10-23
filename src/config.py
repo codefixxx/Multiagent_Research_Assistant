@@ -143,9 +143,16 @@ class Settings(BaseSettings):
     MAX_WALL_CLOCK_SECONDS: int = 240
     MAX_REVISIONS_PER_SUBQUESTION: int = 1
 
-    # Runtime Environment
+    # Runtime Environment & SEO
     ENVIRONMENT: str = "development"
     LOG_LEVEL: str = "INFO"
+    BASE_URL: str = Field(
+        default="",
+        description="Public base URL of the service for canonical metadata and sitemap (e.g. https://research.example.com)",
+        validation_alias=AliasChoices(
+            "BASE_URL", "base_url", "PUBLIC_URL", "public_url", "APP_URL", "app_url"
+        ),
+    )
 
 
 # Global singleton settings instance
