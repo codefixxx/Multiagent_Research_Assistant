@@ -45,6 +45,22 @@ def detect_provider(model_name: str | None, default_provider: str | None = None)
     return (default_provider or settings.LLM_PROVIDER).lower()
 
 
+def resolve_api_key(raw_key: str | None, provider: str) -> str | None:
+    """Resolve API key based on BYOK client input and REQUIRE_BYOK settings."""
+    if raw_key:
+        return raw_key
+    if settings.REQUIRE_BYOK:
+        return None
+    # Local/development fallback to server .env
+    env_keys = {
+        "gemini": settings.GEMINI_API_KEY,
+        "groq": settings.GROQ_API_KEY,
+        "openai": settings.OPENAI_API_KEY,
+        "anthropic": settings.ANTHROPIC_API_KEY,
+    }
+    return env_keys.get(provider.lower())
+
+
 def validate_model_configuration(
     provider: str | None = None,
     model_name: str | None = None,
@@ -63,30 +79,26 @@ def validate_model_configuration(
         )
 
     # Check key requirements
-    if target_provider == "gemini" and not (raw_key or settings.GEMINI_API_KEY):
-        raise AuthenticationError(
-            "GEMINI_API_KEY is not configured.",
-            provider="gemini",
-            suggestion="Please provide a Gemini API key in Settings or set GEMINI_API_KEY in .env.",
-        )
-    if target_provider == "groq" and not (raw_key or settings.GROQ_API_KEY):
-        raise AuthenticationError(
-            "GROQ_API_KEY is not configured.",
-            provider="groq",
-            suggestion="Please provide a Groq API key in Settings or set GROQ_API_KEY in .env.",
-        )
-    if target_provider == "openai" and not (raw_key or settings.OPENAI_API_KEY):
-        raise AuthenticationError(
-            "OPENAI_API_KEY is not configured.",
-            provider="openai",
-            suggestion="Please provide an OpenAI API key in Settings or set OPENAI_API_KEY in .env.",
-        )
-    if target_provider == "anthropic" and not (raw_key or settings.ANTHROPIC_API_KEY):
-        raise AuthenticationError(
-            "ANTHROPIC_API_KEY is not configured.",
-            provider="anthropic",
-            suggestion="Please provide an Anthropic API key in Settings or set ANTHROPIC_API_KEY in .env.",
-        )
+    if target_provider in {"gemini", "groq", "openai", "anthropic"}:
+        active_key = resolve_api_key(raw_key, target_provider)
+        if not active_key:
+            provider_title = target_provider.title()
+            if settings.REQUIRE_BYOK:
+                msg = f"Bring Your Own Key required: No API key provided for '{target_provider}'."
+                suggestion = (
+                    f"Please provide your {provider_title} API key in Settings before launching research."
+                )
+                code = "BYOK_REQUIRED"
+            else:
+                msg = f"{target_provider.upper()}_API_KEY is not configured."
+                suggestion = (
+                    f"Please provide a {provider_title} API key in Settings or set "
+                    f"{target_provider.upper()}_API_KEY in .env."
+                )
+                code = "INVALID_API_KEY"
+            raise AuthenticationError(
+                msg, provider=target_provider, code=code, suggestion=suggestion
+            )
 
 
 async def verify_model_connectivity(
@@ -171,8 +183,15 @@ def get_chat_model(
     target_provider = (provider or detect_provider(model_name)).lower()
 
     if target_provider == "gemini":
-        active_key = raw_key or settings.GEMINI_API_KEY
+        active_key = resolve_api_key(raw_key, "gemini")
         if not active_key:
+            if settings.REQUIRE_BYOK:
+                raise AuthenticationError(
+                    "Bring Your Own Key required: No API key provided for 'gemini'.",
+                    provider="gemini",
+                    code="BYOK_REQUIRED",
+                    suggestion="Please provide your Gemini API key in Settings before launching research.",
+                )
             raise AuthenticationError(
                 "GEMINI_API_KEY is not configured.",
                 provider="gemini",
@@ -192,8 +211,15 @@ def get_chat_model(
         )
 
     if target_provider == "openai":
-        active_key = raw_key or settings.OPENAI_API_KEY
+        active_key = resolve_api_key(raw_key, "openai")
         if not active_key:
+            if settings.REQUIRE_BYOK:
+                raise AuthenticationError(
+                    "Bring Your Own Key required: No API key provided for 'openai'.",
+                    provider="openai",
+                    code="BYOK_REQUIRED",
+                    suggestion="Please provide your OpenAI API key in Settings before launching research.",
+                )
             raise LLMConfigurationError(
                 "OPENAI_API_KEY is not configured. "
                 "Please provide an API key in Settings or set OPENAI_API_KEY in .env."
@@ -214,8 +240,15 @@ def get_chat_model(
         )
 
     if target_provider == "anthropic":
-        active_key = raw_key or settings.ANTHROPIC_API_KEY
+        active_key = resolve_api_key(raw_key, "anthropic")
         if not active_key:
+            if settings.REQUIRE_BYOK:
+                raise AuthenticationError(
+                    "Bring Your Own Key required: No API key provided for 'anthropic'.",
+                    provider="anthropic",
+                    code="BYOK_REQUIRED",
+                    suggestion="Please provide your Anthropic API key in Settings before launching research.",
+                )
             raise LLMConfigurationError(
                 "ANTHROPIC_API_KEY is not configured. "
                 "Please provide an API key in Settings or set ANTHROPIC_API_KEY in .env."
@@ -234,8 +267,15 @@ def get_chat_model(
         )
 
     if target_provider == "groq":
-        active_key = raw_key or settings.GROQ_API_KEY
+        active_key = resolve_api_key(raw_key, "groq")
         if not active_key:
+            if settings.REQUIRE_BYOK:
+                raise AuthenticationError(
+                    "Bring Your Own Key required: No API key provided for 'groq'.",
+                    provider="groq",
+                    code="BYOK_REQUIRED",
+                    suggestion="Please provide your Groq API key in Settings before launching research.",
+                )
             if settings.GEMINI_API_KEY:
                 logger.warning(
                     "GROQ_API_KEY not found; falling back to Gemini provider",

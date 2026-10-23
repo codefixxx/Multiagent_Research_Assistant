@@ -153,6 +153,11 @@ class Settings(BaseSettings):
             "BASE_URL", "base_url", "PUBLIC_URL", "public_url", "APP_URL", "app_url"
         ),
     )
+    REQUIRE_BYOK: bool = Field(
+        default=False,
+        description="When True, strictly forbids falling back to server .env keys. The user MUST supply their own key.",
+        validation_alias=AliasChoices("REQUIRE_BYOK", "require_byok"),
+    )
 
 
 # Global singleton settings instance

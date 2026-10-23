@@ -270,6 +270,7 @@ async def health_check() -> dict[str, Any]:
         "version": "0.1.0",
         "redis_connected": redis_healthy,
         "worker_mode": settings.WORKER_MODE,
+        "require_byok": settings.REQUIRE_BYOK,
         "active_workers_count": len(active_workers),
         "active_workers": active_workers,
         "queue_length": queue_len,

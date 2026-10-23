@@ -136,3 +136,51 @@ def test_get_chat_model_accepts_secret_str():
 
     # validate_model_configuration accepts SecretStr
     validate_model_configuration(provider="mock", api_key=secret)
+
+
+def test_require_byok_blocks_server_env_fallback(monkeypatch):
+    """Verify that when REQUIRE_BYOK is True, get_chat_model and validate_model_configuration refuse fallback."""
+    from src.config import settings
+    from src.core.exceptions import AuthenticationError
+
+    monkeypatch.setattr(settings, "REQUIRE_BYOK", True)
+
+    # 1. Without client key, must raise AuthenticationError with BYOK_REQUIRED code
+    with pytest.raises(AuthenticationError) as exc_info:
+        validate_model_configuration(provider="gemini", api_key=None)
+    assert exc_info.value.code == "BYOK_REQUIRED"
+    assert "Bring Your Own Key required" in exc_info.value.message
+
+    with pytest.raises(AuthenticationError) as exc_info_llm:
+        get_chat_model(provider="gemini", api_key=None)
+    assert exc_info_llm.value.code == "BYOK_REQUIRED"
+
+    # 2. When client key is provided, validation passes
+    validate_model_configuration(
+        provider="gemini", api_key="AIzaSyTestClientProvidedKey12345678"
+    )
+
+
+@pytest.mark.asyncio
+async def test_require_byok_enforced_at_api_route(monkeypatch):
+    """Verify that POST /research rejects requests missing keys when REQUIRE_BYOK is active."""
+    from httpx import ASGITransport, AsyncClient
+    from src.api.main import app
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "REQUIRE_BYOK", True)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://testserver"
+    ) as client:
+        # Check /health reports require_byok
+        health_resp = await client.get("/health")
+        assert health_resp.status_code == 200
+        assert health_resp.json()["require_byok"] is True
+
+        # Submit research without keys
+        res = await client.post("/research", json={"query": "Test BYOK enforcement"})
+        assert res.status_code == 401
+        data = res.json()
+        assert data["code"] == "BYOK_REQUIRED"
+        assert "Bring Your Own Key required" in data["error"]

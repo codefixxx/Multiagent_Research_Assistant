@@ -6,6 +6,7 @@ interface SettingsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (matrix: ModelMatrix, keys: ApiKeys) => void;
+  requireByok?: boolean;
 }
 
 const DEFAULT_MATRIX: ModelMatrix = {
@@ -19,6 +20,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   isOpen,
   onClose,
   onSave,
+  requireByok = false,
 }) => {
   const [matrix, setMatrix] = useState<ModelMatrix>(DEFAULT_MATRIX);
   const [keys, setKeys] = useState<ApiKeys>({});
@@ -182,26 +184,59 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </div>
           </div>
 
-          {/* Optional API Keys */}
+          {/* Optional / BYOK API Keys */}
           <div className="space-y-3 pt-3 border-t border-[#1b1a1f]">
-            <div className="flex items-center space-x-1.5 text-xs font-medium text-[#8a8c92]">
-              <Key className="w-3.5 h-3.5 stroke-[1.75]" />
-              <span>Custom API Keys (Optional)</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-1.5 text-xs font-medium text-[#8a8c92]">
+                <Key className="w-3.5 h-3.5 stroke-[1.75]" />
+                <span>API Keys (Bring Your Own Key)</span>
+              </div>
+              {requireByok && (
+                <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#d9a441]/10 text-[#d9a441] border border-[#d9a441]/30">
+                  BYOK Required
+                </span>
+              )}
             </div>
-            <p className="text-xs text-[#8a8c92]/70 leading-relaxed">
-              Keys are saved locally in your browser only. Leave empty to use default server configuration.
-            </p>
+            <div className="p-3 rounded-md bg-[#171719] border border-[#222224] text-[11px] leading-relaxed text-[#8a8c92] space-y-1.5">
+              <p>
+                <strong className="text-white">Zero Server Key Storage:</strong> Your API keys are saved purely in your browser's local memory and sent via TLS directly for execution.
+              </p>
+              <p>
+                Need a free Gemini key? Grab one instantly at{' '}
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[#4a8ad6] hover:underline font-medium inline-flex items-center gap-0.5"
+                >
+                  Google AI Studio ↗
+                </a>
+              </p>
+            </div>
 
             {/* Gemini */}
             <div className="space-y-1">
-              <label className="text-[#8a8c92] text-xs">Google Gemini API Key</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[#8a8c92] text-xs flex items-center gap-1.5">
+                  <span>Google Gemini API Key</span>
+                  {requireByok && <span className="text-[#d9a441] text-[10px] font-medium">(Required)</span>}
+                </label>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] text-[#4a8ad6] hover:underline"
+                >
+                  Get free key ↗
+                </a>
+              </div>
               <div className="relative flex items-center">
                 <input
                   type={showKey.gemini ? 'text' : 'password'}
                   value={keys.gemini || ''}
-                  onChange={(e) => setKeys({ ...keys, gemini: e.target.value })}
-                  placeholder="AIzaSy... (uses server default if empty)"
-                  className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-1.5 pr-8 text-white focus:outline-none text-xs tabular"
+                  onChange={(e) => setKeys({ ...keys, gemini: e.target.value.trim() })}
+                  placeholder="AIzaSy... (Paste Gemini key)"
+                  className="w-full bg-[#171719] border border-[#222224] rounded-md px-3 py-1.5 pr-8 text-white focus:outline-none text-xs tabular focus:border-[#4a8ad6]"
                 />
                 <button
                   type="button"

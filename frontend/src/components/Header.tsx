@@ -22,6 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenHistory,
 }) => {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
+  const [requireByok, setRequireByok] = useState<boolean>(false);
 
   useEffect(() => {
     const check = async () => {
@@ -30,6 +31,9 @@ export const Header: React.FC<HeaderProps> = ({
         if (res.ok) {
           const data = await res.json();
           setIsOnline(Boolean(data.redis_connected));
+          if (data.require_byok) {
+            setRequireByok(true);
+          }
         } else {
           setIsOnline(false);
         }
@@ -130,6 +134,11 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <SlidersHorizontal className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Settings</span>
+          {requireByok && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#d9a441]/10 text-[#d9a441] border border-[#d9a441]/30">
+              BYOK
+            </span>
+          )}
         </button>
       </div>
     </header>

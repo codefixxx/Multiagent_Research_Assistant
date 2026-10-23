@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useResearchStream } from './hooks/useResearchStream';
 import { Header } from './components/Header';
 import { CommandDeck } from './components/CommandDeck';
@@ -37,6 +37,18 @@ export function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isTraceOpen, setIsTraceOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [requireByok, setRequireByok] = useState(false);
+
+  useEffect(() => {
+    fetch('/health')
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.require_byok) {
+          setRequireByok(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const [activeModelMatrix, setActiveModelMatrix] = useState<ModelMatrix | undefined>(() => {
     try {
@@ -64,6 +76,10 @@ export function App() {
     focusMode: string = 'general',
     hitlEnabled: boolean = false
   ) => {
+    if (requireByok && !activeApiKeys?.gemini) {
+      setIsSettingsOpen(true);
+      return;
+    }
     dispatchInvestigation(
       query,
       subQuestionsCount,
@@ -154,6 +170,7 @@ export function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
+        requireByok={requireByok}
       />
 
       <TraceDrawer

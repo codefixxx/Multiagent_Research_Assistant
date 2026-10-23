@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from src.api.job_runner import ResearchJobService, get_job_service
 from src.api.sse import create_sse_response
-from src.core.exceptions import ApplicationError
+from src.config import settings
+from src.core.exceptions import ApplicationError, AuthenticationError
+from src.core.llm import detect_provider
 from src.export import ReportExportEngine
 from src.schemas.api import (
     AuditTraceResponse,
@@ -70,6 +72,29 @@ async def submit_research(
     payload: ResearchRequest,
     service: ResearchJobService = Depends(get_job_service),
 ) -> ResearchSubmissionResponse:
+    if settings.REQUIRE_BYOK:
+        user_keys = payload.api_keys.to_exposed_dict() if payload.api_keys else {}
+        matrix = payload.model_matrix
+        models_to_check: list[str] = []
+        if matrix:
+            for m in [matrix.planner, matrix.researcher, matrix.reviewer, matrix.writer]:
+                if m:
+                    models_to_check.append(m)
+        if not models_to_check:
+            models_to_check.append(settings.LLM_MODEL or settings.GEMINI_MODEL or settings.LLM_PROVIDER)
+
+        for m in models_to_check:
+            prov = detect_provider(m)
+            if prov in {"gemini", "openai", "anthropic", "groq"}:
+                if not user_keys.get(prov):
+                    prov_title = prov.title()
+                    raise AuthenticationError(
+                        f"Bring Your Own Key required: No API key provided for '{prov}'.",
+                        provider=prov,
+                        code="BYOK_REQUIRED",
+                        suggestion=f"Please provide your {prov_title} API key in Settings before launching research.",
+                    )
+
     run_id = str(uuid.uuid4())
     await service.start_job(run_id=run_id, request=payload)
     return ResearchSubmissionResponse(
