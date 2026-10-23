@@ -574,7 +574,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                     </div>
 
                     <div className="bg-[#131217] p-3.5 rounded-md border border-[#222224] text-xs text-white/80 leading-relaxed mb-4">
-                      You declined or stopped the proposed research strategy during the plan review phase. No web searches were dispatched and no API token budget was consumed.
+                      You declined or stopped the proposed research strategy during the plan review phase. You can adjust your research depth (number of sub-topics), review mode (HITL), or focus settings above and click Regenerate.
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2.5 pt-3 border-t border-[#222224]">
@@ -583,9 +583,10 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                           type="button"
                           onClick={onRetry}
                           className="inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-md bg-[#2568b2] hover:bg-[#1e5494] text-white text-xs font-medium transition-colors cursor-pointer shadow-sm"
+                          title="Regenerate research using current configuration"
                         >
                           <RefreshCw className="w-3.5 h-3.5 text-white" />
-                          <span>Restart Investigation</span>
+                          <span>Regenerate Investigation</span>
                         </button>
                       )}
                     </div>

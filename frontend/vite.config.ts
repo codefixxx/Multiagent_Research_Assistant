@@ -23,6 +23,6 @@ export default defineConfig({
   },
   build: {
     outDir: path.resolve(import.meta.dirname, '../src/static'),
-    emptyOutDir: true,
+    emptyOutDir: false,
   },
 })

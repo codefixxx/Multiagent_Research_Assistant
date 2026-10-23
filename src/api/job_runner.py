@@ -182,12 +182,13 @@ class ResearchJobService:
             llm_writer = None
             collector = None
 
+            user_keys: dict[str, Any] = (
+                request.api_keys.to_exposed_dict()
+                if request.api_keys and hasattr(request.api_keys, "to_exposed_dict")
+                else (request.api_keys.model_dump() if request.api_keys else {})
+            )
+
             if llm is None:
-                user_keys = (
-                    request.api_keys.to_exposed_dict()
-                    if request.api_keys and hasattr(request.api_keys, "to_exposed_dict")
-                    else (request.api_keys.model_dump() if request.api_keys else {})
-                )
                 matrix = request.model_matrix.model_dump() if request.model_matrix else {}
 
                 def _get_key_for_model(model_name: str | None) -> str | None:
@@ -523,11 +524,15 @@ class ResearchJobService:
             # Egress Guardrail: Scrub any secrets from final report and findings before persistence or broadcast
             from src.core.security import sanitize_findings_secrets, sanitize_report_secrets
 
-            active_secrets = (
-                [v for v in user_keys.values() if v and isinstance(v, str)]
-                if "user_keys" in locals() and isinstance(user_keys, dict)
-                else None
-            )
+            raw_secrets: list[str] = []
+            for v in user_keys.values():
+                if hasattr(v, "get_secret_value"):
+                    sec = v.get_secret_value()
+                    if sec:
+                        raw_secrets.append(sec)
+                elif isinstance(v, str) and v:
+                    raw_secrets.append(v)
+            active_secrets = raw_secrets or None
             final_report = sanitize_report_secrets(final_report, custom_secrets=active_secrets)
             findings_obj_list = sanitize_findings_secrets(
                 findings_obj_list, custom_secrets=active_secrets
@@ -903,6 +908,14 @@ class ResearchJobService:
         """Cancel an in-flight research job (in-process or distributed)."""
         await self.initialize()
         cancelled = False
+
+        # If run is awaiting HITL approval, unblock the event loop with reject
+        if run_id in self._plan_approval_events:
+            self._pending_steer_actions[run_id] = {"action": "reject"}
+            ev = self._plan_approval_events.get(run_id)
+            if ev:
+                ev.set()
+
         task = self._active_tasks.get(run_id)
         if task and not task.done():
             task.cancel()
@@ -916,7 +929,14 @@ class ResearchJobService:
             meta = await self.run_manager.get_run_metadata(run_id)
             if not meta:
                 return cancelled
-            if meta.get("status") in ("planning", "researching", "reviewing", "writing", "queued"):
+            if meta.get("status") in (
+                "planning",
+                "awaiting_approval",
+                "researching",
+                "reviewing",
+                "writing",
+                "queued",
+            ):
                 if self.queue:
                     await self.queue.request_cancel(run_id)
                 await self.run_manager.update_run_status(
@@ -926,8 +946,8 @@ class ResearchJobService:
                 )
                 await self.broadcaster.broadcast(
                     run_id=run_id,
-                    event="job_failed",
-                    data={"status": "cancelled", "error": "Job cancelled."},
+                    event="job_cancelled",
+                    data={"status": "cancelled", "message": "Job cancelled by caller."},
                 )
                 cancelled = True
         return cancelled

@@ -230,6 +230,14 @@ export function useResearchStream() {
           setStatus('cancelled');
           setIsDispatching(false);
           stopTimer();
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
           setConsolidatorState('waiting');
           setWriterState('waiting');
           setSubQuestions(prev => prev.map(w => ({ ...w, status: 'waiting' })));
@@ -323,6 +331,14 @@ export function useResearchStream() {
           setStatus('failed');
           setIsDispatching(false);
           stopTimer();
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
           setJobData(prev => ({
             run_id: currentRunId || (prev?.run_id ?? ''),
             status: 'failed',
@@ -457,6 +473,16 @@ export function useResearchStream() {
     focusMode: string = 'general',
     hitlEnabled: boolean = false
   ) => {
+    // Terminate existing SSE and polling timers before starting a new investigation
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+
     // Reset workspace
     setJobData(null);
     setLogs([]);
@@ -579,6 +605,14 @@ export function useResearchStream() {
         setStatus('cancelled');
         setIsDispatching(false);
         stopTimer();
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
         setJobData(prev => ({
           ...(prev || { run_id: currentRunId || '', query: '', status: 'cancelled' }),
           status: 'cancelled',

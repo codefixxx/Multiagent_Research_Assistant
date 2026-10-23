@@ -1,8 +1,22 @@
-import React, { useState } from 'react';
-import { Search, ArrowRight, Loader2 } from 'lucide-react';
+import React from 'react';
+import { Search, ArrowRight, Loader2, RotateCcw } from 'lucide-react';
+import type { JobStatus } from '../types';
 
 interface CommandDeckProps {
   isDispatching: boolean;
+  status?: JobStatus;
+  query: string;
+  onQueryChange: (query: string) => void;
+  depth: number;
+  onDepthChange: (depth: number) => void;
+  timeLimit: number;
+  onTimeLimitChange: (timeLimit: number) => void;
+  deepScrape: boolean;
+  onDeepScrapeChange: (deepScrape: boolean) => void;
+  focusMode: string;
+  onFocusModeChange: (focusMode: string) => void;
+  hitlEnabled: boolean;
+  onHitlEnabledChange: (hitlEnabled: boolean) => void;
   onDispatch: (
     query: string,
     subQuestionsCount: number,
@@ -21,32 +35,28 @@ const STARTERS = [
 
 export const CommandDeck: React.FC<CommandDeckProps> = ({
   isDispatching,
+  status,
+  query,
+  onQueryChange,
+  depth,
+  onDepthChange,
+  timeLimit,
+  onTimeLimitChange,
+  deepScrape,
+  onDeepScrapeChange,
+  focusMode,
+  onFocusModeChange,
+  hitlEnabled,
+  onHitlEnabledChange,
   onDispatch
 }) => {
-  const [query, setQuery] = useState('');
-  const [depth, setDepth] = useState(2);
-  const [timeLimit, setTimeLimit] = useState(120);
-  const [deepScrape, setDeepScrape] = useState(true);
-  const [focusMode, setFocusMode] = useState('general');
-  const [hitlEnabled, setHitlEnabled] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem('multiagent_hitl_enabled');
-      return saved !== null ? saved === 'true' : true;
-    } catch {
-      return true;
-    }
-  });
-
-  const handleHitlToggle = (checked: boolean) => {
-    setHitlEnabled(checked);
-    try {
-      localStorage.setItem('multiagent_hitl_enabled', String(checked));
-    } catch {}
-  };
+  // Only lock the inputs if the backend is actively retrieving/generating
+  // When paused for HITL decision or cancelled, allow user to change parameters freely
+  const isBusy = isDispatching && status !== 'awaiting_approval';
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!query.trim() || isDispatching) return;
+    if (!query.trim() || isBusy) return;
     onDispatch(query.trim(), depth, timeLimit, deepScrape, focusMode, hitlEnabled);
   };
 
@@ -61,21 +71,31 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => onQueryChange(e.target.value)}
             placeholder="Ask anything to research (e.g., tech comparisons, architecture decisions, market facts)..."
-            disabled={isDispatching}
+            disabled={isBusy}
             className="w-full bg-transparent px-4 py-3.5 text-sm sm:text-base text-white placeholder-[#8a8c92]/60 focus:outline-none disabled:opacity-50"
           />
           <div className="pr-3">
             <button
               type="submit"
-              disabled={!query.trim() || isDispatching}
+              disabled={!query.trim() || isBusy}
               className="inline-flex items-center space-x-2 px-5 py-2.5 rounded-md bg-[#2568b2] hover:bg-[#1e5494] text-white text-sm font-medium transition-colors disabled:bg-[#212023] disabled:text-[#a0a2a8] cursor-pointer disabled:cursor-not-allowed"
             >
-              {isDispatching ? (
+              {isBusy ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Researching...</span>
+                </>
+              ) : status === 'cancelled' ? (
+                <>
+                  <RotateCcw className="w-4 h-4 text-[#d9a441]" />
+                  <span>Regenerate Research</span>
+                </>
+              ) : status === 'awaiting_approval' ? (
+                <>
+                  <RotateCcw className="w-4 h-4 text-[#d9a441]" />
+                  <span>Regenerate Plan</span>
                 </>
               ) : (
                 <>
@@ -96,14 +116,14 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
               <span className="text-[#8a8c92]">Focus:</span>
               <select
                 value={focusMode}
-                onChange={(e) => setFocusMode(e.target.value)}
-                disabled={isDispatching}
+                onChange={(e) => onFocusModeChange(e.target.value)}
+                disabled={isBusy}
                 className="bg-transparent text-white font-medium text-[13px] focus:outline-none cursor-pointer"
               >
                 <option value="general" className="bg-[#131217] text-white">🌐 General Web</option>
-                <option value="academic" className="bg-[#131217] text-white">🎓 Academic & Scientific</option>
-                <option value="technical" className="bg-[#131217] text-white">⚡ Technical & Engineering</option>
-                <option value="financial" className="bg-[#131217] text-white">📈 Financial & Market</option>
+                <option value="academic" className="bg-[#131217] text-white">🎓 Academic &amp; Scientific</option>
+                <option value="technical" className="bg-[#131217] text-white">⚡ Technical &amp; Engineering</option>
+                <option value="financial" className="bg-[#131217] text-white">📈 Financial &amp; Market</option>
               </select>
             </div>
 
@@ -112,8 +132,8 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
               <span className="text-[#8a8c92]">Depth:</span>
               <select
                 value={depth}
-                onChange={(e) => setDepth(Number(e.target.value))}
-                disabled={isDispatching}
+                onChange={(e) => onDepthChange(Number(e.target.value))}
+                disabled={isBusy}
                 className="bg-transparent text-white font-medium text-[13px] focus:outline-none cursor-pointer"
               >
                 <option value={2} className="bg-[#131217] text-white">Standard (2 sub-topics)</option>
@@ -127,8 +147,8 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
               <span className="text-[#8a8c92]">Time:</span>
               <select
                 value={timeLimit}
-                onChange={(e) => setTimeLimit(Number(e.target.value))}
-                disabled={isDispatching}
+                onChange={(e) => onTimeLimitChange(Number(e.target.value))}
+                disabled={isBusy}
                 className="bg-transparent text-white font-medium text-[13px] focus:outline-none cursor-pointer"
               >
                 <option value={60} className="bg-[#131217] text-white">Quick (60s)</option>
@@ -142,8 +162,8 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
               <input
                 type="checkbox"
                 checked={deepScrape}
-                onChange={(e) => setDeepScrape(e.target.checked)}
-                disabled={isDispatching}
+                onChange={(e) => onDeepScrapeChange(e.target.checked)}
+                disabled={isBusy}
                 className="w-3.5 h-3.5 rounded border-[#222224] bg-transparent text-[#4a8ad6] focus:ring-0 cursor-pointer"
               />
               <span className="text-white/90 select-none text-[13px]">Read Full Web Pages</span>
@@ -154,8 +174,8 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
               <input
                 type="checkbox"
                 checked={hitlEnabled}
-                onChange={(e) => handleHitlToggle(e.target.checked)}
-                disabled={isDispatching}
+                onChange={(e) => onHitlEnabledChange(e.target.checked)}
+                disabled={isBusy}
                 className="w-3.5 h-3.5 rounded border-[#222224] bg-transparent text-[#d9a441] focus:ring-0 cursor-pointer"
               />
               <span className="text-white/90 select-none text-[13px] flex items-center space-x-1.5">
@@ -173,9 +193,9 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
               <button
                 key={idx}
                 type="button"
-                onClick={() => setQuery(s.query)}
-                disabled={isDispatching}
-                className="px-2.5 py-1 rounded-md text-[13px] bg-[#131217] hover:bg-[#212023] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
+                onClick={() => onQueryChange(s.query)}
+                disabled={isBusy}
+                className="px-2.5 py-1 rounded-md text-[13px] bg-[#131217] hover:bg-[#212023] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer disabled:opacity-50"
               >
                 {s.label}
               </button>
@@ -186,3 +206,4 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
     </section>
   );
 };
+

@@ -1,6 +1,6 @@
 """FastAPI application entrypoint and lifespan management."""
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     FileResponse,
+    HTMLResponse,
     JSONResponse,
     PlainTextResponse,
     RedirectResponse,
@@ -59,6 +60,8 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+    docs_url=None,
+    redoc_url=None,
 )
 
 
@@ -143,6 +146,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next: Callable[[Request], Any]) -> Response:
+    """Enforce standard OWASP security headers across all responses."""
+    response: Response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self'; "
+        "style-src 'self'; "
+        "font-src 'self' data:; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "form-action 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self';"
+    )
+    return response
+
 # Register route modules
 app.include_router(research_router)
 
@@ -167,6 +192,58 @@ async def dashboard_view() -> FileResponse:
         str(index_path),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
     )
+
+
+@app.get(
+    "/docs",
+    tags=["Documentation"],
+    summary="Interactive OpenAPI Swagger Documentation",
+    include_in_schema=False,
+)
+async def custom_swagger_ui_html() -> HTMLResponse:
+    """Serve self-hosted Swagger UI without inline scripts or external CDNs."""
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Agent Research Assistant API - Swagger UI</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/docs/swagger-ui.css">
+</head>
+<body>
+    <div id="swagger-ui"></div>
+    <script src="/static/docs/swagger-ui-bundle.js"></script>
+    <script src="/static/docs/swagger-ui-init.js"></script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+
+@app.get(
+    "/redoc",
+    tags=["Documentation"],
+    summary="Interactive ReDoc Documentation",
+    include_in_schema=False,
+)
+async def custom_redoc_html() -> HTMLResponse:
+    """Serve self-hosted ReDoc without inline styles or external CDNs."""
+    html = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Multi-Agent Research Assistant API - ReDoc</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="/static/docs/redoc-init.css">
+</head>
+<body>
+    <noscript>ReDoc requires Javascript to function.</noscript>
+    <redoc spec-url="/openapi.json"></redoc>
+    <script src="/static/docs/redoc.standalone.js"></script>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
 
 
 @app.get(

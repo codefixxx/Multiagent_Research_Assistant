@@ -68,28 +68,136 @@ export function App() {
     }
   });
 
+  // Centralized research settings state shared between CommandDeck and retry/regenerate workflows
+  const [query, setQuery] = useState('');
+  const [depth, setDepth] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('multiagent_depth');
+      return saved ? Number(saved) : 2;
+    } catch {
+      return 2;
+    }
+  });
+  const [timeLimit, setTimeLimit] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('multiagent_time_limit');
+      return saved ? Number(saved) : 120;
+    } catch {
+      return 120;
+    }
+  });
+  const [deepScrape, setDeepScrape] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('multiagent_deep_scrape');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [focusMode, setFocusMode] = useState<string>(() => {
+    try {
+      return localStorage.getItem('multiagent_focus_mode') || 'general';
+    } catch {
+      return 'general';
+    }
+  });
+  const [hitlEnabled, setHitlEnabled] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('multiagent_hitl_enabled');
+      return saved !== null ? saved === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const handleDepthChange = (newDepth: number) => {
+    setDepth(newDepth);
+    try {
+      localStorage.setItem('multiagent_depth', String(newDepth));
+    } catch {}
+  };
+
+  const handleTimeLimitChange = (newLimit: number) => {
+    setTimeLimit(newLimit);
+    try {
+      localStorage.setItem('multiagent_time_limit', String(newLimit));
+    } catch {}
+  };
+
+  const handleDeepScrapeChange = (checked: boolean) => {
+    setDeepScrape(checked);
+    try {
+      localStorage.setItem('multiagent_deep_scrape', String(checked));
+    } catch {}
+  };
+
+  const handleFocusModeChange = (newFocus: string) => {
+    setFocusMode(newFocus);
+    try {
+      localStorage.setItem('multiagent_focus_mode', newFocus);
+    } catch {}
+  };
+
+  const handleHitlChange = (checked: boolean) => {
+    setHitlEnabled(checked);
+    try {
+      localStorage.setItem('multiagent_hitl_enabled', String(checked));
+    } catch {}
+  };
+
+  // Sync settings when loaded from existing run or history
+  useEffect(() => {
+    if (jobData?.query) {
+      setQuery(prev => prev || (jobData.query ?? ''));
+    }
+    if (jobData?.focus_mode) {
+      setFocusMode(jobData.focus_mode);
+    }
+    if (jobData?.hitl_enabled !== undefined) {
+      setHitlEnabled(jobData.hitl_enabled);
+    }
+  }, [jobData]);
+
   const handleDispatch = (
-    query: string,
-    subQuestionsCount: number,
-    timeLimitSec: number,
-    deepScrape: boolean,
-    focusMode: string = 'general',
-    hitlEnabled: boolean = false
+    targetQuery: string,
+    subQuestionsCount: number = depth,
+    timeLimitSec: number = timeLimit,
+    isDeepScrape: boolean = deepScrape,
+    targetFocusMode: string = focusMode,
+    isHitlEnabled: boolean = hitlEnabled
   ) => {
     if (requireByok && !activeApiKeys?.gemini) {
       setIsSettingsOpen(true);
       return;
     }
+    // Cleanly cancel previous paused job if re-dispatching from awaiting approval
+    if (currentRunId && status === 'awaiting_approval') {
+      steerPlan('reject').catch(() => {});
+    }
     dispatchInvestigation(
-      query,
+      targetQuery,
       subQuestionsCount,
       timeLimitSec,
-      deepScrape,
+      isDeepScrape,
       activeModelMatrix,
       activeApiKeys,
-      focusMode,
-      hitlEnabled
+      targetFocusMode,
+      isHitlEnabled
     );
+  };
+
+  const handleRetryOrRegenerate = () => {
+    const targetQuery = query.trim() || jobData?.query;
+    if (targetQuery) {
+      handleDispatch(
+        targetQuery,
+        depth,
+        timeLimit,
+        deepScrape,
+        focusMode,
+        hitlEnabled
+      );
+    }
   };
 
   const handleSaveSettings = (matrix: ModelMatrix, keys: ApiKeys) => {
@@ -119,6 +227,19 @@ export function App() {
         {/* Command Bar */}
         <CommandDeck
           isDispatching={isDispatching}
+          status={status}
+          query={query}
+          onQueryChange={setQuery}
+          depth={depth}
+          onDepthChange={handleDepthChange}
+          timeLimit={timeLimit}
+          onTimeLimitChange={handleTimeLimitChange}
+          deepScrape={deepScrape}
+          onDeepScrapeChange={handleDeepScrapeChange}
+          focusMode={focusMode}
+          onFocusModeChange={handleFocusModeChange}
+          hitlEnabled={hitlEnabled}
+          onHitlEnabledChange={handleHitlChange}
           onDispatch={handleDispatch}
         />
 
@@ -145,18 +266,7 @@ export function App() {
           onSelectCitation={(citation) => setSelectedCitation(citation)}
           onOpenSettings={() => setIsSettingsOpen(true)}
           onSteerPlan={steerPlan}
-          onRetry={() => {
-            if (jobData?.query) {
-              handleDispatch(
-                jobData.query,
-                2,
-                120,
-                true,
-                jobData.focus_mode || 'general',
-                jobData.hitl_enabled !== undefined ? jobData.hitl_enabled : true
-              );
-            }
-          }}
+          onRetry={handleRetryOrRegenerate}
         />
       </div>
 

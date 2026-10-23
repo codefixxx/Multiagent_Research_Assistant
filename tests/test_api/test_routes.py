@@ -320,3 +320,20 @@ async def test_steer_plan_endpoint(client, mock_llm):
         json={"action": "approve"},
     )
     assert bad_res.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_security_headers_present(client):
+    """Verify standard OWASP security headers (CSP, Anti-Clickjacking, Nosniff) on responses."""
+    endpoints = ["/health", "/dashboard", "/docs", "/redoc", "/"]
+    for endpoint in endpoints:
+        resp = await client.get(endpoint)
+        headers = {k.lower(): v for k, v in resp.headers.items()}
+        assert headers.get("x-content-type-options") == "nosniff", f"Missing on {endpoint}"
+        assert headers.get("x-frame-options") == "DENY", f"Missing on {endpoint}"
+        csp = headers.get("content-security-policy", "")
+        assert "default-src 'self'" in csp, f"Missing default-src on {endpoint}"
+        assert "frame-ancestors 'none'" in csp, f"Missing frame-ancestors on {endpoint}"
+        assert "unsafe-inline" not in csp, f"Found unsafe-inline on {endpoint}"
+        assert headers.get("referrer-policy") == "strict-origin-when-cross-origin", f"Missing on {endpoint}"
+
