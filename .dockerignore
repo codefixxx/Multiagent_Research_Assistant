@@ -16,7 +16,6 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .agent/
-***REMOVED***
 
 # Frontend dependencies and source (static build is copied to src/static)
 frontend/node_modules/
