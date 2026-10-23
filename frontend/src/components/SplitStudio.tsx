@@ -68,9 +68,15 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     const map = new Map<string, Citation>();
     if (report?.citations) {
       report.citations.forEach(c => {
-        const cleanKey = c.citation_id.replace(/[\[\]]/g, '');
+        const cleanKey = c.citation_id.replace(/[[\]]/g, '');
         map.set(cleanKey, c);
         map.set(c.citation_id, c);
+        const numOnly = cleanKey.replace(/^cite_?/, '');
+        if (numOnly) {
+          map.set(numOnly, c);
+          map.set(`cite_${numOnly}`, c);
+          map.set(`cite:${numOnly}`, c);
+        }
       });
     }
     return map;
@@ -81,8 +87,8 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     if (!report?.markdown_output) return '';
     try {
       const rawHtml = marked.parse(report.markdown_output) as string;
-      return rawHtml.replace(/\[(cite_\d+)\]/g, (_match, citeKey) => {
-        return `<button type="button" class="citation-tag inline-flex items-center px-1.5 py-0.5 mx-1 rounded text-xs font-medium bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/40 hover:bg-[#4a8ad6]/20 transition-colors cursor-pointer tabular" data-cite="${citeKey}">[${citeKey}]</button>`;
+      return rawHtml.replace(/\[(cite[_:]?\d+|\d+)\]/gi, (match, citeKey) => {
+        return `<button type="button" class="citation-tag inline-flex items-center px-1.5 py-0.5 mx-1 rounded text-xs font-medium bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/40 hover:bg-[#4a8ad6]/20 transition-colors cursor-pointer tabular" data-cite="${citeKey}">${match}</button>`;
       });
     } catch {
       return report.markdown_output;
@@ -198,7 +204,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     const btn = target.closest('button.citation-tag');
     if (btn) {
       const citeKey = btn.getAttribute('data-cite') || '';
-      const cleanKey = citeKey.replace(/[\[\]]/g, '');
+      const cleanKey = citeKey.replace(/[[\]]/g, '');
       if (citationMap.has(cleanKey)) {
         onSelectCitation(citationMap.get(cleanKey)!);
       } else if (citationMap.has(citeKey)) {
@@ -362,6 +368,57 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                     />
                   </div>
                 </div>
+
+                {/* Interactive Verified Sources & Deep Links Ledger */}
+                {report?.citations && report.citations.length > 0 && (
+                  <div className="pt-3 border-t border-[#1b1a1f] space-y-2">
+                    <div className="flex items-center justify-between text-xs text-[#8a8c92]">
+                      <span className="font-medium text-white/90">
+                        Verified Sources ({report.citations.length})
+                      </span>
+                      <span className="text-[11px] text-[#4a8ad6]">Click to inspect</span>
+                    </div>
+                    <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1">
+                      {report.citations.map((cite) => {
+                        const domainName = (() => {
+                          try {
+                            return new URL(cite.source_url).hostname.replace(/^www\./, '');
+                          } catch {
+                            return cite.source_url;
+                          }
+                        })();
+                        const hasAnchor = Boolean(cite.anchor_url && cite.anchor_url.includes('#:~:text='));
+                        return (
+                          <button
+                            key={cite.citation_id}
+                            type="button"
+                            onClick={() => onSelectCitation(cite)}
+                            className="w-full text-left p-2 rounded bg-[#171719] hover:bg-[#1f1e24] border border-[#222224] hover:border-[#4a8ad6]/40 transition-colors flex items-start space-x-2 group cursor-pointer"
+                          >
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/30 shrink-0">
+                              {cite.citation_id.replace(/[[\]]/g, '')}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-mono text-white/90 truncate group-hover:text-[#7bb0ed]">
+                                  {domainName}
+                                </span>
+                                {hasAnchor && (
+                                  <span className="text-[9px] text-[#5fc39c] bg-[#1b2828] px-1 rounded border border-[#44a282]/30 shrink-0 ml-1">
+                                    anchor
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-[#8a8c92] line-clamp-1 mt-0.5 italic">
+                                &ldquo;{cite.verbatim_quote || cite.verified_claim}&rdquo;
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           );

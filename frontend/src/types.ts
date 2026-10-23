@@ -44,6 +44,10 @@ export interface Citation {
   citation_id: string;
   source_url: string;
   verified_claim: string;
+  anchor_url?: string;
+  verbatim_quote?: string;
+  http_status?: number;
+  is_deep_link?: boolean;
   publish_date?: string;
   is_verified?: boolean;
 }
