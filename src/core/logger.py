@@ -3,9 +3,11 @@
 import logging
 import re
 import sys
+from collections.abc import Mapping
 from typing import Any
 
 import structlog
+from structlog.types import EventDict, Processor
 
 from src.config import settings
 
@@ -36,7 +38,7 @@ def sanitize_log_value(val: Any) -> Any:
     """Recursively redact secrets from log event dictionaries, lists, and strings."""
     if isinstance(val, str):
         return redact_secrets_text(val)
-    if isinstance(val, dict):
+    if isinstance(val, (dict, Mapping)):
         return {k: sanitize_log_value(v) for k, v in val.items()}
     if isinstance(val, list):
         return [sanitize_log_value(v) for v in val]
@@ -45,9 +47,7 @@ def sanitize_log_value(val: Any) -> Any:
     return val
 
 
-def redact_secrets_processor(
-    logger: Any, method_name: str, event_dict: dict[str, Any]
-) -> dict[str, Any]:
+def redact_secrets_processor(logger: Any, method_name: str, event_dict: EventDict) -> EventDict:
     """Structlog processor ensuring secrets are sanitized before rendering or serialization."""
     return sanitize_log_value(event_dict)
 
@@ -70,7 +70,7 @@ def setup_logger():
     """Configure structured logging format for development and production."""
     log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 
-    shared_processors = [
+    shared_processors: list[Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
@@ -81,6 +81,7 @@ def setup_logger():
         redact_secrets_processor,
     ]
 
+    processors: list[Processor]
     if settings.ENVIRONMENT == "production":
         processors = shared_processors + [structlog.processors.JSONRenderer()]
     else:
