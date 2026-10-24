@@ -59,7 +59,8 @@ RUN mkdir -p /ms-playwright && \
 
 # Copy application code with proper ownership
 COPY --chown=appuser:appgroup src/ /app/src/
-COPY --chown=appuser:appgroup --from=frontend-builder /app/src/static /app/src/static
+COPY --chown=appuser:appgroup frontend/public/ /app/frontend/public/
+COPY --chown=appuser:appgroup --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
 COPY --chown=appuser:appgroup pyproject.toml README.md /app/
 
 USER appuser

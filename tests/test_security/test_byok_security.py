@@ -165,6 +165,7 @@ def test_require_byok_blocks_server_env_fallback(monkeypatch):
 async def test_require_byok_enforced_at_api_route(monkeypatch):
     """Verify that POST /research rejects requests missing keys when REQUIRE_BYOK is active."""
     from httpx import ASGITransport, AsyncClient
+
     from src.api.main import app
     from src.config import settings
 

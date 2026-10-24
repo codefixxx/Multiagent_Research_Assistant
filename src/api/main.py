@@ -26,9 +26,10 @@ from src.core.exceptions import ApplicationError, classify_error
 from src.core.logger import logger
 from src.persistence.redis_saver import get_redis_client
 
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_repo_root = Path(__file__).resolve().parent.parent.parent
+STATIC_DIR = _repo_root / "frontend" / "dist"
 if not STATIC_DIR.exists():
-    _frontend_public = Path(__file__).resolve().parent.parent.parent / "frontend" / "public"
+    _frontend_public = _repo_root / "frontend" / "public"
     if _frontend_public.exists():
         STATIC_DIR = _frontend_public
 
@@ -193,7 +194,7 @@ async def dashboard_view() -> FileResponse:
     """Serve the single-page interactive research workbench."""
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
-        _frontend_index = Path(__file__).resolve().parent.parent.parent / "frontend" / "index.html"
+        _frontend_index = _repo_root / "frontend" / "index.html"
         if _frontend_index.exists():
             index_path = _frontend_index
     return FileResponse(
