@@ -1,9 +1,0 @@
-/**
- * Static compatibility CSS sheet for API clients
- */
-:root {
-  --bg-void: #090a0f;
-  --surface: #101217;
-  --accent: #3b82f6;
-  --border: rgba(255, 255, 255, 0.08);
-}

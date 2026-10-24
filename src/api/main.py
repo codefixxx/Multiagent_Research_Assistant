@@ -27,6 +27,10 @@ from src.core.logger import logger
 from src.persistence.redis_saver import get_redis_client
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+if not STATIC_DIR.exists():
+    _frontend_public = Path(__file__).resolve().parent.parent.parent / "frontend" / "public"
+    if _frontend_public.exists():
+        STATIC_DIR = _frontend_public
 
 
 def _get_base_url(request: Request) -> str:
@@ -188,6 +192,10 @@ if STATIC_DIR.exists():
 async def dashboard_view() -> FileResponse:
     """Serve the single-page interactive research workbench."""
     index_path = STATIC_DIR / "index.html"
+    if not index_path.exists():
+        _frontend_index = Path(__file__).resolve().parent.parent.parent / "frontend" / "index.html"
+        if _frontend_index.exists():
+            index_path = _frontend_index
     return FileResponse(
         str(index_path),
         headers={"Cache-Control": "no-cache, no-store, must-revalidate"},

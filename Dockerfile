@@ -3,7 +3,15 @@
 # Multi-stage, lean, security-hardened container for FastAPI & LangGraph
 # ==============================================================================
 
-# Build Stage: Dependency Compilation & Packaging
+# Stage 1: Automated Frontend Production Build
+FROM node:20-slim AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# Stage 2: Python Dependency Compilation & Packaging
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
@@ -51,6 +59,7 @@ RUN mkdir -p /ms-playwright && \
 
 # Copy application code with proper ownership
 COPY --chown=appuser:appgroup src/ /app/src/
+COPY --chown=appuser:appgroup --from=frontend-builder /app/src/static /app/src/static
 COPY --chown=appuser:appgroup pyproject.toml README.md /app/
 
 USER appuser

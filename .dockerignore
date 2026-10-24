@@ -17,9 +17,10 @@ __pycache__/
 .ruff_cache/
 .agent/
 
-# Frontend dependencies and source (static build is copied to src/static)
+# Frontend dependencies and source (static build is compiled in Docker)
 frontend/node_modules/
 frontend/dist/
+src/static/
 
 # Test artifacts and reports
 test-results/

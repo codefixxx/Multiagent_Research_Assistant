@@ -47,6 +47,7 @@ node_modules/
 frontend/node_modules/
 frontend/dist/
 frontend/test-results/
+src/static/
 
 # IDE, Agent, and OS files
 .agent/
