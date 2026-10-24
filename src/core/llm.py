@@ -85,9 +85,7 @@ def validate_model_configuration(
             provider_title = target_provider.title()
             if settings.REQUIRE_BYOK:
                 msg = f"Bring Your Own Key required: No API key provided for '{target_provider}'."
-                suggestion = (
-                    f"Please provide your {provider_title} API key in Settings before launching research."
-                )
+                suggestion = f"Please provide your {provider_title} API key in Settings before launching research."
                 code = "BYOK_REQUIRED"
             else:
                 msg = f"{target_provider.upper()}_API_KEY is not configured."

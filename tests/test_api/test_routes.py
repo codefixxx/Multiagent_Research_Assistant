@@ -335,5 +335,6 @@ async def test_security_headers_present(client):
         assert "default-src 'self'" in csp, f"Missing default-src on {endpoint}"
         assert "frame-ancestors 'none'" in csp, f"Missing frame-ancestors on {endpoint}"
         assert "unsafe-inline" not in csp, f"Found unsafe-inline on {endpoint}"
-        assert headers.get("referrer-policy") == "strict-origin-when-cross-origin", f"Missing on {endpoint}"
-
+        assert headers.get("referrer-policy") == "strict-origin-when-cross-origin", (
+            f"Missing on {endpoint}"
+        )

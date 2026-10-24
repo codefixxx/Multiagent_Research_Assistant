@@ -81,7 +81,9 @@ async def submit_research(
                 if m:
                     models_to_check.append(m)
         if not models_to_check:
-            models_to_check.append(settings.LLM_MODEL or settings.GEMINI_MODEL or settings.LLM_PROVIDER)
+            models_to_check.append(
+                settings.LLM_MODEL or settings.GEMINI_MODEL or settings.LLM_PROVIDER
+            )
 
         for m in models_to_check:
             prov = detect_provider(m)

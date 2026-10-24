@@ -173,6 +173,7 @@ async def add_security_headers(request: Request, call_next: Callable[[Request], 
     )
     return response
 
+
 # Register route modules
 app.include_router(research_router)
 

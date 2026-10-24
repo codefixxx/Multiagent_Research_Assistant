@@ -156,9 +156,7 @@ def test_require_byok_blocks_server_env_fallback(monkeypatch):
     assert exc_info_llm.value.code == "BYOK_REQUIRED"
 
     # 2. When client key is provided, validation passes
-    validate_model_configuration(
-        provider="gemini", api_key="AIzaSyTestClientProvidedKey12345678"
-    )
+    validate_model_configuration(provider="gemini", api_key="AIzaSyTestClientProvidedKey12345678")
 
 
 @pytest.mark.asyncio
