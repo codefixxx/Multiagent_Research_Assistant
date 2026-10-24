@@ -80,71 +80,67 @@ flowchart TD
 
 ## Quickstart Guide
 
-### Option 1: Docker Compose (Recommended)
+### Option 1: Docker Compose (All-in-One Automated Stack)
 
-1. **Clone and Configure Environment:**
+Docker automatically compiles the React frontend via a multi-stage build, starts Redis, and boots the backend API and worker in one step. **No local Node.js or manual build steps required.**
+
+1. **Configure Environment:**
    ```bash
-   git clone https://github.com/your-username/Multiagent_research_assistant.git
-   cd Multiagent_research_assistant
    cp .env.example .env
    ```
-   Add your API keys in `.env`:
-   ```bash
-   GEMINI_API_KEY="your-gemini-key"      # or GROQ_API_KEY="your-groq-key"
-   TAVILY_API_KEY="your-tavily-key"      # optional (DuckDuckGo fallback enabled)
-   ```
+   Add your API keys in `.env` (Gemini, Groq, OpenAI, Anthropic, or use free BYOK in the dashboard).
 
 2. **Boot the Complete Stack:**
    ```bash
-   docker compose up -d
+   docker compose up --build
    ```
-   This launches:
-   - **`research_api`**: FastAPI service listening on `http://localhost:8000`
-   - **`research_redis`**: Official Linux Redis 8 container with persistent volume
+   *(Or run in the background with `docker compose up --build -d`)*
+
+   This automatically launches:
+   - **`research_api`**: FastAPI service & compiled web dashboard on `http://localhost:8000/dashboard`
+   - **`research_redis`**: Official Redis 8 persistence engine on port `6379`
+   - **`research_worker`**: Decoupled background autonomous research execution worker
 
 3. **Verify System Health:**
    ```bash
    curl http://localhost:8000/health
    ```
-   ```json
-   {
-     "status": "healthy",
-     "service": "multiagent-research-assistant",
-     "version": "0.1.0",
-     "redis_connected": true,
-     "llm_provider": "gemini",
-     "search_engine": "auto"
-   }
-   ```
 
 ---
 
-### Option 2: Local Development Setup
+### Option 2: Local Multi-Step Development Setup
 
-1. **Prerequisites:** Python 3.11+ and Docker Desktop (for Redis).
+Use this workflow for local development with instant hot-reloading on code changes.
 
-2. **Start Redis Container:**
+1. **Prerequisites:** Python 3.11+, Node.js 20+, and Redis (via Docker or local script).
+
+2. **Terminal 1: Start Redis**
    ```bash
    docker compose up -d redis
    ```
+   *(Or without Docker on Windows: `.venv\Scripts\python.exe scripts\run_redis_server.py`)*
 
-3. **Install Dependencies in Virtualenv:**
+3. **Terminal 2: Launch Backend API Server**
    ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Or .venv\Scripts\Activate.ps1 on Windows
-   pip install -e ".[dev]"
-   ```
+   # Windows:
+   set WORKER_MODE=embedded
+   .venv\Scripts\uvicorn.exe src.api.main:app --reload --port 8000
 
-4. **Launch Development API Server:**
-   ```bash
+   # macOS / Linux:
+   export WORKER_MODE=embedded
    uvicorn src.api.main:app --reload --port 8000
    ```
+   *Note: `WORKER_MODE=embedded` runs research jobs directly in the FastAPI process without needing a separate worker terminal.*
 
-5. **Run the Test Suite:**
+4. **Terminal 3: Start Vite Frontend (Hot Module Replacement)**
    ```bash
-   pytest -v
-   # 74 passed
+   cd frontend
+   npm run dev
    ```
+
+5. **Access Application:**
+   - **Live Interactive Dashboard:** `http://localhost:5173` (Instant live-reload on any React/CSS edit; auto-proxies API calls to port 8000)
+   - **Backend API & Swagger Docs:** `http://localhost:8000/docs`
 
 ---
 
