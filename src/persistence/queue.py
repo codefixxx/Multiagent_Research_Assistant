@@ -32,10 +32,14 @@ class RedisJobQueue:
             and hasattr(request.api_keys, "has_keys")
             and request.api_keys.has_keys()
         ):
-            from src.core.security import encrypt_secrets
+            from src.core.security import encrypt_secrets, zero_out_secrets
 
             exposed = request.api_keys.to_exposed_dict()
-            encrypted_keys = encrypt_secrets(exposed, aad=run_id)
+            try:
+                encrypted_keys = encrypt_secrets(exposed, aad=run_id)
+            finally:
+                zero_out_secrets(exposed)
+                exposed.clear()
 
         payload = {
             "run_id": run_id,

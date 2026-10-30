@@ -128,6 +128,13 @@ class ResearchJobService:
                 request=request,
                 session_id=effective_session_id,
             )
+            # Memory zeroization: evict raw keys from API server memory now that payload is encrypted in queue
+            if hasattr(request, "api_keys") and request.api_keys is not None:
+                from src.core.security import zero_out_secrets
+
+                zero_out_secrets(request.api_keys)
+                request.api_keys = None
+
             await self.broadcaster.broadcast(
                 run_id=run_id,
                 event="job_queued",
