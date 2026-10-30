@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { PlanSteeringCard } from './PlanSteeringCard';
 import { marked } from 'marked';
+import { isAutoPurgeOnExport, getSessionId } from '../utils/session';
 import { 
   FileText, 
   Copy, 
@@ -226,6 +227,19 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const triggerAutoPurgeIfNeeded = (runId?: string) => {
+    if (isAutoPurgeOnExport() && runId) {
+      setTimeout(() => {
+        fetch(`/research/${runId}`, {
+          method: 'DELETE',
+          headers: {
+            'X-Session-ID': getSessionId(),
+          },
+        }).catch(() => {});
+      }, 1500);
+    }
+  };
+
   const handleDownloadMarkdown = () => {
     if (!report?.markdown_output) return;
     const blob = new Blob([report.markdown_output], { type: 'text/markdown;charset=utf-8' });
@@ -235,6 +249,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     link.download = `research_report_${jobData?.run_id?.slice(0, 8) || 'export'}.md`;
     link.click();
     URL.revokeObjectURL(url);
+    triggerAutoPurgeIfNeeded(jobData?.run_id);
   };
 
   const handleDownloadJson = () => {
@@ -246,11 +261,13 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     link.download = `research_data_${jobData.run_id?.slice(0, 8) || 'export'}.json`;
     link.click();
     URL.revokeObjectURL(url);
+    triggerAutoPurgeIfNeeded(jobData?.run_id);
   };
 
   const handleExportBackend = (format: 'pdf' | 'docx' | 'html' | 'markdown') => {
     if (!jobData?.run_id) return;
     window.open(`/research/${jobData.run_id}/export?format=${format}`, '_blank');
+    triggerAutoPurgeIfNeeded(jobData.run_id);
   };
 
   // Convert technical raw log into clean human update

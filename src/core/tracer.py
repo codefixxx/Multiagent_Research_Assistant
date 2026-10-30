@@ -34,14 +34,17 @@ def get_tracer() -> trace.Tracer:
 
 
 def record_span(span_record: dict[str, Any]) -> None:
-    """Register a finished span record under its associated run_id."""
+    """Register a finished span record under its associated run_id with secrets scrubbed."""
     run_id = span_record.get("run_id") or span_record.get("attributes", {}).get("run_id")
     if not run_id:
         return
+    from src.core.logger import sanitize_log_value
+
+    clean_record = sanitize_log_value(span_record)
     with _run_spans_lock:
         if run_id not in _run_spans_store:
             _run_spans_store[run_id] = []
-        _run_spans_store[run_id].append(span_record)
+        _run_spans_store[run_id].append(clean_record)
 
 
 def get_run_spans(run_id: str) -> list[dict[str, Any]]:
@@ -95,7 +98,9 @@ async def async_trace_span(
             yield dynamic_context
             otel_span.set_status(Status(StatusCode.OK))
         except Exception as exc:
-            error_msg = str(exc)
+            from src.core.logger import redact_secrets_text
+
+            error_msg = redact_secrets_text(str(exc))
             status = "error"
             otel_span.set_status(Status(StatusCode.ERROR, description=error_msg))
             otel_span.record_exception(exc)
@@ -109,8 +114,11 @@ async def async_trace_span(
             final_attrs = {**span_attrs, **dynamic_context}
             for k, v in dynamic_context.items():
                 if v is not None:
+                    from src.core.logger import redact_secrets_text
+
+                    clean_v = redact_secrets_text(str(v)) if isinstance(v, str) else v
                     otel_span.set_attribute(
-                        k, str(v) if not isinstance(v, (int, float, bool)) else v
+                        k, str(clean_v) if not isinstance(clean_v, (int, float, bool)) else clean_v
                     )
 
             span_record = {
@@ -161,7 +169,9 @@ def sync_trace_span(
             yield dynamic_context
             otel_span.set_status(Status(StatusCode.OK))
         except Exception as exc:
-            error_msg = str(exc)
+            from src.core.logger import redact_secrets_text
+
+            error_msg = redact_secrets_text(str(exc))
             status = "error"
             otel_span.set_status(Status(StatusCode.ERROR, description=error_msg))
             otel_span.record_exception(exc)
@@ -174,8 +184,11 @@ def sync_trace_span(
             final_attrs = {**span_attrs, **dynamic_context}
             for k, v in dynamic_context.items():
                 if v is not None:
+                    from src.core.logger import redact_secrets_text
+
+                    clean_v = redact_secrets_text(str(v)) if isinstance(v, str) else v
                     otel_span.set_attribute(
-                        k, str(v) if not isinstance(v, (int, float, bool)) else v
+                        k, str(clean_v) if not isinstance(clean_v, (int, float, bool)) else clean_v
                     )
 
             span_record = {

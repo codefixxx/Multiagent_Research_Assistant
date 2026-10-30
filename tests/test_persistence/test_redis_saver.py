@@ -333,3 +333,23 @@ async def test_clear_session_purges_all_runs_for_session():
     tot_other, runs_other = await manager.list_recent_runs(session_id=sess_other)
     assert tot_other == 1
     assert runs_other[0]["run_id"] == "run-oth-1"
+
+
+@pytest.mark.asyncio
+async def test_clear_run_evicts_memory_spans():
+    """Verify clear_run purges in-memory trace spans as well as Redis records."""
+    from src.core.tracer import get_run_spans, record_span
+
+    client = await get_redis_client(force_fake=True)
+    await client.flushall()
+    manager = RedisRunManager(redis_client=client)
+
+    run_id = "run-trace-evict-check"
+    record_span({"run_id": run_id, "name": "step_one", "status": "success"})
+    assert len(get_run_spans(run_id)) == 1
+
+    await manager.init_run(run_id, "Testing span eviction")
+    await manager.clear_run(run_id)
+
+    # In-memory spans must be completely evicted
+    assert len(get_run_spans(run_id)) == 0

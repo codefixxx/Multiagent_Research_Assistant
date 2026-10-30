@@ -9,6 +9,7 @@ import { SettingsDrawer } from './components/SettingsDrawer';
 import { TraceDrawer } from './components/TraceDrawer';
 import { HistoryDrawer } from './components/HistoryDrawer';
 import type { Citation, ModelMatrix, ApiKeys } from './types';
+import { registerSessionUnloadHandler } from './utils/session';
 
 export function App() {
   const {
@@ -48,6 +49,11 @@ export function App() {
         }
       })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const unregister = registerSessionUnloadHandler();
+    return () => unregister();
   }, []);
 
   const [activeModelMatrix, setActiveModelMatrix] = useState<ModelMatrix | undefined>(() => {
@@ -286,6 +292,10 @@ export function App() {
         onClose={() => setIsSettingsOpen(false)}
         onSave={handleSaveSettings}
         requireByok={requireByok}
+        onSessionPurged={() => {
+          setActiveApiKeys(undefined);
+          window.location.reload();
+        }}
       />
 
       <TraceDrawer

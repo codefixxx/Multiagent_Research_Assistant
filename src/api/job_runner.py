@@ -749,6 +749,10 @@ class ResearchJobService:
                 zero_out_secrets(request.api_keys)
                 request.api_keys = None
 
+            if "user_keys" in locals() and isinstance(user_keys, dict):
+                zero_out_secrets(user_keys)
+                user_keys.clear()
+
     async def get_status(
         self, run_id: str, session_id: str | None = None
     ) -> ResearchStatusResponse | None:

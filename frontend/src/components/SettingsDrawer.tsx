@@ -1,12 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import type { ModelMatrix, ApiKeys } from '../types';
-import { X, Sliders, Key, Zap, Brain, Eye, EyeOff, Save, RotateCcw } from 'lucide-react';
+import {
+  X,
+  Sliders,
+  Key,
+  Zap,
+  Brain,
+  Eye,
+  EyeOff,
+  Save,
+  RotateCcw,
+  ShieldCheck,
+  Trash2,
+  Copy,
+  Check,
+} from 'lucide-react';
+import {
+  getSessionId,
+  isAutoPurgeOnExport,
+  setAutoPurgeOnExport as saveAutoPurgeOnExport,
+  isPurgeOnClose,
+  setPurgeOnClose as savePurgeOnClose,
+  purgeEntireSession,
+} from '../utils/session';
 
 interface SettingsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (matrix: ModelMatrix, keys: ApiKeys) => void;
   requireByok?: boolean;
+  onSessionPurged?: () => void;
 }
 
 const DEFAULT_MATRIX: ModelMatrix = {
@@ -21,10 +44,16 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   onClose,
   onSave,
   requireByok = false,
+  onSessionPurged,
 }) => {
   const [matrix, setMatrix] = useState<ModelMatrix>(DEFAULT_MATRIX);
   const [keys, setKeys] = useState<ApiKeys>({});
   const [showKey, setShowKey] = useState<Record<string, boolean>>({});
+  const [autoPurgeExport, setAutoPurgeExport] = useState(false);
+  const [purgeClose, setPurgeClose] = useState(false);
+  const [copiedSessionId, setCopiedSessionId] = useState(false);
+  const [isPurging, setIsPurging] = useState(false);
+  const [currentSessionId, setCurrentSessionId] = useState('');
 
   useEffect(() => {
     try {
@@ -38,6 +67,9 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
         sessionStorage.setItem('multiagent_byok_keys', savedKeys);
         localStorage.removeItem('multiagent_byok_keys');
       }
+      setAutoPurgeExport(isAutoPurgeOnExport());
+      setPurgeClose(isPurgeOnClose());
+      setCurrentSessionId(getSessionId());
     } catch {}
   }, [isOpen]);
 
@@ -68,9 +100,35 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
       localStorage.setItem('multiagent_model_matrix', JSON.stringify(matrix));
       sessionStorage.setItem('multiagent_byok_keys', JSON.stringify(keys));
       localStorage.removeItem('multiagent_byok_keys');
+      saveAutoPurgeOnExport(autoPurgeExport);
+      savePurgeOnClose(purgeClose);
     } catch {}
     onSave(matrix, keys);
     onClose();
+  };
+
+  const handleCopySessionId = () => {
+    if (!currentSessionId) return;
+    navigator.clipboard.writeText(currentSessionId);
+    setCopiedSessionId(true);
+    setTimeout(() => setCopiedSessionId(false), 2000);
+  };
+
+  const handlePurgeAllData = async () => {
+    if (!window.confirm("Immediately purge all research runs, logs, and checkpoints from this ephemeral session?")) {
+      return;
+    }
+    setIsPurging(true);
+    try {
+      await purgeEntireSession();
+      setKeys({});
+      setCurrentSessionId(getSessionId());
+      if (onSessionPurged) onSessionPurged();
+      onSave(matrix, {});
+    } finally {
+      setIsPurging(false);
+      onClose();
+    }
   };
 
   const handleReset = () => {
@@ -294,6 +352,95 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
                   className="absolute right-2 text-[#8a8c92] hover:text-white"
                 >
                   {showKey.anthropic ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Search & Forget Ephemeral Policy */}
+          <div className="space-y-3 pt-3 border-t border-[#222224]">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2 text-white font-medium text-xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-[#30a46c]" />
+                <span>Search & Forget Ephemeral Policy</span>
+              </div>
+              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-[#30a46c]/10 text-[#30a46c] border border-[#30a46c]/30">
+                Isolated
+              </span>
+            </div>
+
+            <div className="p-3 rounded-md bg-[#171719] border border-[#222224] text-[11px] space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="text-[#8a8c92]">
+                  Session Token:
+                  <span className="ml-1.5 font-mono text-white text-[10px]">
+                    {currentSessionId ? `${currentSessionId.substring(0, 16)}...` : 'Generating...'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopySessionId}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#212023] hover:bg-[#2a292e] text-[#8a8c92] hover:text-white transition-colors cursor-pointer text-[10px]"
+                >
+                  {copiedSessionId ? (
+                    <>
+                      <Check className="w-3 h-3 text-[#30a46c]" />
+                      <span>Copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      <span>Copy ID</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Auto Purge on Export Option */}
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={autoPurgeExport}
+                  onChange={(e) => setAutoPurgeExport(e.target.checked)}
+                  className="mt-0.5 rounded border-[#333338] bg-[#171719] text-[#4a8ad6] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                />
+                <div className="text-[11px] leading-snug">
+                  <span className="text-white font-medium">Auto-purge run on export</span>
+                  <p className="text-[#8a8c92] text-[10px] mt-0.5">
+                    Instantly erase server trace, checkpoints, and findings as soon as you download the report.
+                  </p>
+                </div>
+              </label>
+
+              {/* Purge on Tab Close Option */}
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={purgeClose}
+                  onChange={(e) => setPurgeClose(e.target.checked)}
+                  className="mt-0.5 rounded border-[#333338] bg-[#171719] text-[#4a8ad6] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                />
+                <div className="text-[11px] leading-snug">
+                  <span className="text-white font-medium">Purge server state on tab close</span>
+                  <p className="text-[#8a8c92] text-[10px] mt-0.5">
+                    Sends an eviction beacon to clear all session runs from Redis when closing this tab.
+                  </p>
+                </div>
+              </label>
+
+              {/* Manual Purge Session Button */}
+              <div className="pt-2 border-t border-[#222224] flex items-center justify-between">
+                <span className="text-[#8a8c92] text-[10px]">
+                  Want zero residue immediately?
+                </span>
+                <button
+                  type="button"
+                  onClick={handlePurgeAllData}
+                  disabled={isPurging}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-[#e5484d]/10 hover:bg-[#e5484d]/20 text-[#e5484d] border border-[#e5484d]/30 text-[10px] font-medium transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  <span>{isPurging ? 'Purging...' : 'Wipe Session Now'}</span>
                 </button>
               </div>
             </div>

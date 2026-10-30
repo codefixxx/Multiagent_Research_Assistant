@@ -75,3 +75,37 @@ def test_sync_trace_span():
     assert spans[0]["attributes"]["results_count"] == 5
 
     clear_run_spans(run_id)
+
+
+@pytest.mark.asyncio
+async def test_trace_span_scrubs_api_key_secrets():
+    run_id = "test-secrets-redaction-run"
+    clear_run_spans(run_id)
+
+    raw_openai_key = "sk-proj-1234567890abcdef1234567890abcdef"
+    raw_gemini_key = "AIzaSyABCDEF12345678901234567890"
+
+    with pytest.raises(RuntimeError):
+        async with async_trace_span(
+            "llm_call",
+            run_id=run_id,
+            attributes={"client_info": f"Calling LLM with {raw_gemini_key}"},
+        ) as ctx:
+            ctx["custom_header"] = f"Authorization Bearer {raw_openai_key}"
+            raise RuntimeError(f"Authentication failed with key {raw_openai_key}")
+
+    spans = get_run_spans(run_id)
+    assert len(spans) == 1
+    span = spans[0]
+
+    # Raw secrets must NOT be in error description
+    assert raw_openai_key not in span["error"]
+    assert "[REDACTED_API_KEY]" in span["error"]
+
+    # Raw secrets must NOT be in span attributes
+    assert raw_openai_key not in span["attributes"]["custom_header"]
+    assert "[REDACTED_API_KEY]" in span["attributes"]["custom_header"]
+    assert raw_gemini_key not in span["attributes"]["client_info"]
+    assert "[REDACTED_API_KEY]" in span["attributes"]["client_info"]
+
+    clear_run_spans(run_id)

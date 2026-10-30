@@ -566,6 +566,12 @@ class RedisRunManager:
                 await self.redis.zrem(self._index_key(target_session), run_id)
         except Exception:
             pass
+        try:
+            from src.core.tracer import clear_run_spans
+
+            clear_run_spans(run_id)
+        except Exception:
+            pass
         return True
 
     async def clear_session(self, session_id: str) -> int:
