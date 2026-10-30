@@ -23,6 +23,7 @@ class RedisJobQueue:
         run_id: str,
         request: ResearchRequest,
         priority: int = 0,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Enqueue a research job payload into the Redis queue with encrypted BYOK secrets."""
         encrypted_keys = None
@@ -38,13 +39,19 @@ class RedisJobQueue:
 
         payload = {
             "run_id": run_id,
+            "session_id": session_id or getattr(request, "session_id", None),
             "request": request.model_dump(mode="json"),
             "encrypted_keys": encrypted_keys,
             "enqueued_at": datetime.now(UTC).isoformat(),
             "priority": priority,
         }
         await self.redis.rpush(self.queue_key, json.dumps(payload))
-        logger.info("Enqueued research job in Redis queue", run_id=run_id, query=request.query)
+        logger.info(
+            "Enqueued research job in Redis queue",
+            run_id=run_id,
+            query=request.query,
+            session_id=payload["session_id"],
+        )
         return payload
 
     @staticmethod

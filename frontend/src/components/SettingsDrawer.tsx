@@ -30,8 +30,14 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     try {
       const savedMatrix = localStorage.getItem('multiagent_model_matrix');
       if (savedMatrix) setMatrix(JSON.parse(savedMatrix));
-      const savedKeys = localStorage.getItem('multiagent_byok_keys');
-      if (savedKeys) setKeys(JSON.parse(savedKeys));
+      // BYOK keys: use ephemeral sessionStorage and migrate away from localStorage
+      const savedKeys =
+        sessionStorage.getItem('multiagent_byok_keys') || localStorage.getItem('multiagent_byok_keys');
+      if (savedKeys) {
+        setKeys(JSON.parse(savedKeys));
+        sessionStorage.setItem('multiagent_byok_keys', savedKeys);
+        localStorage.removeItem('multiagent_byok_keys');
+      }
     } catch {}
   }, [isOpen]);
 
@@ -60,7 +66,8 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
   const handleSave = () => {
     try {
       localStorage.setItem('multiagent_model_matrix', JSON.stringify(matrix));
-      localStorage.setItem('multiagent_byok_keys', JSON.stringify(keys));
+      sessionStorage.setItem('multiagent_byok_keys', JSON.stringify(keys));
+      localStorage.removeItem('multiagent_byok_keys');
     } catch {}
     onSave(matrix, keys);
     onClose();
@@ -71,6 +78,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
     setKeys({});
     try {
       localStorage.removeItem('multiagent_model_matrix');
+      sessionStorage.removeItem('multiagent_byok_keys');
       localStorage.removeItem('multiagent_byok_keys');
     } catch {}
   };
@@ -199,7 +207,7 @@ export const SettingsDrawer: React.FC<SettingsDrawerProps> = ({
             </div>
             <div className="p-3 rounded-md bg-[#171719] border border-[#222224] text-[11px] leading-relaxed text-[#8a8c92] space-y-1.5">
               <p>
-                <strong className="text-white">Zero Server Key Storage:</strong> Your API keys are saved purely in your browser's local memory and sent via TLS directly for execution.
+                <strong className="text-white">Ephemeral Session Protection:</strong> Your API keys are held purely in temporary session storage (never written to permanent disk), encrypted in transit over AES-256-GCM, and automatically purged when you close the tab.
               </p>
               <p>
                 Need a free Gemini key? Grab one instantly at{' '}

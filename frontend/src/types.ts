@@ -129,6 +129,7 @@ export interface ResearchReport {
 
 export interface ResearchJobData {
   run_id: string;
+  session_id?: string;
   status: JobStatus;
   query: string;
   focus_mode?: string;
@@ -157,6 +158,7 @@ export interface StreamLogEntry {
 
 export interface ResearchHistoryItem {
   run_id: string;
+  session_id?: string;
   query: string;
   status: JobStatus | string;
   focus_mode?: string;

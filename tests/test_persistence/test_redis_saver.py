@@ -248,3 +248,88 @@ async def test_clear_run_removes_from_index():
     await manager.clear_run("run-to-delete")
     total_after, runs_after = await manager.list_recent_runs(limit=10, offset=0)
     assert not any(r["run_id"] == "run-to-delete" for r in runs_after)
+
+
+@pytest.mark.asyncio
+async def test_session_scoped_isolation():
+    """Verify ephemeral session scoping isolates runs between distinct users/sessions."""
+    client = await get_redis_client(force_fake=True)
+    await client.flushall()
+    manager = RedisRunManager(redis_client=client)
+
+    sess_a = "session-alice-111"
+    sess_b = "session-bob-222"
+
+    await manager.init_run("run-alice-1", "Alice's secret research", session_id=sess_a)
+    await manager.init_run("run-bob-1", "Bob's private investigation", session_id=sess_b)
+
+    # 1. Alice only sees her run in history
+    total_a, runs_a = await manager.list_recent_runs(session_id=sess_a)
+    assert total_a == 1
+    assert len(runs_a) == 1
+    assert runs_a[0]["run_id"] == "run-alice-1"
+    assert runs_a[0]["session_id"] == sess_a
+
+    # 2. Bob only sees his run in history
+    total_b, runs_b = await manager.list_recent_runs(session_id=sess_b)
+    assert total_b == 1
+    assert len(runs_b) == 1
+    assert runs_b[0]["run_id"] == "run-bob-1"
+    assert runs_b[0]["session_id"] == sess_b
+
+    # 3. Cross-session access rejection on metadata lookup
+    # Bob trying to view Alice's run by ID returns None
+    assert await manager.get_run_metadata("run-alice-1", session_id=sess_b) is None
+    # Unauthenticated lookup (session_id=None) on a session-bound run returns None
+    assert await manager.get_run_metadata("run-alice-1", session_id=None) is None
+    # Alice accessing her own run succeeds
+    alice_meta = await manager.get_run_metadata("run-alice-1", session_id=sess_a)
+    assert alice_meta is not None
+    assert alice_meta["run_id"] == "run-alice-1"
+
+    # 4. Cross-session deletion rejection
+    # Bob attempting to delete Alice's run is rejected
+    deleted_cross = await manager.clear_run("run-alice-1", session_id=sess_b)
+    assert deleted_cross is False
+    # Alice's run still exists
+    assert await manager.get_run_metadata("run-alice-1", session_id=sess_a) is not None
+
+    # Alice deleting her own run succeeds
+    deleted_own = await manager.clear_run("run-alice-1", session_id=sess_a)
+    assert deleted_own is True
+    assert await manager.get_run_metadata("run-alice-1", session_id=sess_a) is None
+
+
+@pytest.mark.asyncio
+async def test_clear_session_purges_all_runs_for_session():
+    """Verify clear_session purges all session artifacts, metadata, and index in Redis."""
+    client = await get_redis_client(force_fake=True)
+    await client.flushall()
+    manager = RedisRunManager(redis_client=client)
+
+    sess_target = "session-ephemeral-target"
+    sess_other = "session-other-unrelated"
+
+    await manager.init_run("run-tgt-1", "Ephemeral query 1", session_id=sess_target)
+    await manager.init_run("run-tgt-2", "Ephemeral query 2", session_id=sess_target)
+    await manager.init_run("run-oth-1", "Unrelated query", session_id=sess_other)
+
+    # Both target runs exist
+    tot_before, runs_before = await manager.list_recent_runs(session_id=sess_target)
+    assert tot_before == 2
+
+    # Purge target session
+    cleared_count = await manager.clear_session(sess_target)
+    assert cleared_count == 2
+
+    # Target session index and metadata are completely wiped
+    tot_after, runs_after = await manager.list_recent_runs(session_id=sess_target)
+    assert tot_after == 0
+    assert len(runs_after) == 0
+    assert await manager.get_run_metadata("run-tgt-1", session_id=sess_target) is None
+    assert await manager.get_run_metadata("run-tgt-2", session_id=sess_target) is None
+
+    # Other session remains intact
+    tot_other, runs_other = await manager.list_recent_runs(session_id=sess_other)
+    assert tot_other == 1
+    assert runs_other[0]["run_id"] == "run-oth-1"

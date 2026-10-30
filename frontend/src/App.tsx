@@ -61,7 +61,12 @@ export function App() {
 
   const [activeApiKeys, setActiveApiKeys] = useState<ApiKeys | undefined>(() => {
     try {
-      const saved = localStorage.getItem('multiagent_byok_keys');
+      const saved =
+        sessionStorage.getItem('multiagent_byok_keys') || localStorage.getItem('multiagent_byok_keys');
+      if (saved && localStorage.getItem('multiagent_byok_keys')) {
+        localStorage.removeItem('multiagent_byok_keys');
+        sessionStorage.setItem('multiagent_byok_keys', saved);
+      }
       return saved ? JSON.parse(saved) : undefined;
     } catch {
       return undefined;

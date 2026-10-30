@@ -188,7 +188,9 @@ class RedisRunManager:
             else getattr(settings, "REPORT_RETENTION_SECONDS", 86400)
         )
 
-    def _index_key(self) -> str:
+    def _index_key(self, session_id: str | None = None) -> str:
+        if session_id:
+            return f"research:session:{session_id}:runs:index"
         return "research:runs:index"
 
     def _meta_key(self, run_id: str) -> str:
@@ -203,11 +205,13 @@ class RedisRunManager:
         query: str,
         focus_mode: str = "general",
         hitl_enabled: bool = False,
+        session_id: str | None = None,
     ) -> dict[str, Any]:
         """Initialize metadata for a new research run."""
         now = datetime.now(UTC).isoformat()
         metadata = {
             "run_id": run_id,
+            "session_id": session_id,
             "query": query,
             "status": "planning",
             "current_node": "planner",
@@ -227,15 +231,27 @@ class RedisRunManager:
         # Index run in the reverse-chronological Sorted Set
         try:
             now_ts = time.time()
-            await self.redis.zadd(self._index_key(), {run_id: now_ts})
+            idx_key = self._index_key(session_id)
+            await self.redis.zadd(idx_key, {run_id: now_ts})
             if self.default_ttl and self.default_ttl > 0:
+                await self.redis.expire(idx_key, self.default_ttl)
                 await self.redis.zremrangebyscore(
-                    self._index_key(), "-inf", now_ts - self.default_ttl
+                    idx_key, "-inf", now_ts - self.default_ttl
                 )
         except Exception as e:
-            logger.debug("Failed indexing run in Sorted Set", run_id=run_id, error=str(e))
+            logger.debug(
+                "Failed indexing run in Sorted Set",
+                run_id=run_id,
+                session_id=session_id,
+                error=str(e),
+            )
 
-        logger.info("Initialized research run metadata in Redis", run_id=run_id, query=query)
+        logger.info(
+            "Initialized research run metadata in Redis",
+            run_id=run_id,
+            query=query,
+            session_id=session_id,
+        )
         return metadata
 
     async def update_run_status(
@@ -289,17 +305,21 @@ class RedisRunManager:
         # Ensure run ID is indexed in the Sorted Set
         try:
             now_ts = time.time()
-            await self.redis.zadd(self._index_key(), {run_id: now_ts})
+            sess = meta.get("session_id")
+            await self.redis.zadd(self._index_key(sess), {run_id: now_ts})
         except Exception:
             pass
 
         return meta
 
     async def list_recent_runs(
-        self, limit: int = 20, offset: int = 0
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        session_id: str | None = None,
     ) -> tuple[int, list[dict[str, Any]]]:
         """Retrieve recent research runs within the retention window in reverse-chronological order."""
-        idx_key = self._index_key()
+        idx_key = self._index_key(session_id)
         now_ts = time.time()
         if self.default_ttl and self.default_ttl > 0:
             try:
@@ -319,7 +339,7 @@ class RedisRunManager:
 
         runs: list[dict[str, Any]] = []
         for run_id in run_ids:
-            meta = await self.get_run_metadata(run_id)
+            meta = await self.get_run_metadata(run_id, session_id=session_id)
             if meta:
                 # Check whether finalized report artifact exists
                 has_report = await self.redis.exists(self._report_key(run_id))
@@ -364,13 +384,21 @@ class RedisRunManager:
 
         return total, runs
 
-    async def get_run_metadata(self, run_id: str) -> dict[str, Any] | None:
-        """Fetch metadata for a given run ID."""
+    async def get_run_metadata(
+        self, run_id: str, session_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Fetch metadata for a given run ID, verifying session ownership if run is bound to a session."""
         raw = await self.redis.get(self._meta_key(run_id))
         if not raw:
             return None
         data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-        return json.loads(data_str)
+        data = json.loads(data_str)
+        run_session = data.get("session_id")
+        if run_session is not None:
+            # If the run is bound to an ephemeral session, require matching session_id
+            if session_id != run_session:
+                return None
+        return data
 
     def _report_key(self, run_id: str) -> str:
         return f"research:run:{run_id}:report"
@@ -495,13 +523,38 @@ class RedisRunManager:
             except Exception:
                 pass
 
-    async def clear_run(self, run_id: str) -> None:
+        try:
+            raw = await self.redis.get(self._meta_key(run_id))
+            if raw:
+                data = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+                sess = data.get("session_id")
+                if sess:
+                    await self.redis.expire(self._index_key(sess), ttl)
+        except Exception:
+            pass
+
+    async def clear_run(self, run_id: str, session_id: str | None = None) -> bool:
         """Purge metadata, step records, report, and audit records for a given run."""
+        raw = await self.redis.get(self._meta_key(run_id))
+        target_session = session_id
+        if raw:
+            try:
+                data = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
+                run_session = data.get("session_id")
+                if run_session is not None and session_id is not None and session_id != run_session:
+                    return False
+                if not target_session:
+                    target_session = run_session
+            except Exception:
+                pass
+
         await self.redis.delete(
             self._meta_key(run_id),
             self._steps_key(run_id),
             self._report_key(run_id),
             self._trace_key(run_id),
+            self._plan_key(run_id),
+            self._steer_key(run_id),
             f"research:run:{run_id}:events",
             f"research:run:{run_id}:cancel",
             f"checkpoint:{run_id}",
@@ -509,8 +562,23 @@ class RedisRunManager:
         )
         try:
             await self.redis.zrem(self._index_key(), run_id)
+            if target_session:
+                await self.redis.zrem(self._index_key(target_session), run_id)
         except Exception:
             pass
+        return True
+
+    async def clear_session(self, session_id: str) -> int:
+        """Purge all research runs and the index associated with a session ID."""
+        idx_key = self._index_key(session_id)
+        raw_ids = await self.redis.zrange(idx_key, 0, -1)
+        run_ids = [rid.decode("utf-8") if isinstance(rid, bytes) else rid for rid in raw_ids]
+        count = 0
+        for run_id in run_ids:
+            await self.clear_run(run_id, session_id=session_id)
+            count += 1
+        await self.redis.delete(idx_key)
+        return count
 
 
 class NodeIdempotencyCache:

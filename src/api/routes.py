@@ -1,8 +1,9 @@
 """FastAPI route definitions for research orchestration, status polling, and streaming."""
 
 import uuid
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 
 from src.api.job_runner import ResearchJobService, get_job_service
 from src.api.sse import create_sse_response
@@ -12,6 +13,7 @@ from src.core.llm import detect_provider
 from src.export import ReportExportEngine
 from src.schemas.api import (
     AuditTraceResponse,
+    DeleteRunResponse,
     ModelValidationRequest,
     ModelValidationResponse,
     PlanSteerRequest,
@@ -24,6 +26,38 @@ from src.schemas.api import (
 )
 
 router = APIRouter(prefix="/research", tags=["Research"])
+
+
+def get_session_id(
+    x_session_id: str | None = Header(None, alias="X-Session-ID"),
+    session_id: str | None = Query(None, alias="session_id"),
+) -> str | None:
+    """Extract ephemeral session ID from X-Session-ID header or session_id query param."""
+    return x_session_id or session_id
+
+
+async def _fetch_status(
+    service: ResearchJobService, run_id: str, session_id: str | None = None
+) -> ResearchStatusResponse | None:
+    if session_id:
+        return await service.get_status(run_id, session_id=session_id)
+    return await service.get_status(run_id)
+
+
+async def _fetch_trace(
+    service: ResearchJobService, run_id: str, session_id: str | None = None
+) -> AuditTraceResponse | None:
+    if session_id:
+        return await service.get_audit_trace(run_id, session_id=session_id)
+    return await service.get_audit_trace(run_id)
+
+
+async def _fetch_history(
+    service: ResearchJobService, limit: int, offset: int, session_id: str | None = None
+) -> tuple[int, list[dict[str, Any]]]:
+    if session_id:
+        return await service.get_history(limit=limit, offset=offset, session_id=session_id)
+    return await service.get_history(limit=limit, offset=offset)
 
 
 @router.post(
@@ -70,7 +104,9 @@ async def validate_model(
 )
 async def submit_research(
     payload: ResearchRequest,
+    response: Response,
     service: ResearchJobService = Depends(get_job_service),
+    session_id: str | None = Depends(get_session_id),
 ) -> ResearchSubmissionResponse:
     if settings.REQUIRE_BYOK:
         user_keys = payload.api_keys.to_exposed_dict() if payload.api_keys else {}
@@ -97,10 +133,16 @@ async def submit_research(
                         suggestion=f"Please provide your {prov_title} API key in Settings before launching research.",
                     )
 
+    active_session_id = session_id or payload.session_id
     run_id = str(uuid.uuid4())
-    await service.start_job(run_id=run_id, request=payload)
+    if active_session_id:
+        await service.start_job(run_id=run_id, request=payload, session_id=active_session_id)
+        response.headers["X-Session-ID"] = active_session_id
+    else:
+        await service.start_job(run_id=run_id, request=payload)
     return ResearchSubmissionResponse(
         run_id=run_id,
+        session_id=active_session_id,
         status="queued",
         message="Research job accepted and queued for execution.",
     )
@@ -115,14 +157,16 @@ async def submit_research(
 async def list_research_history(
     limit: int = Query(20, ge=1, le=100, description="Max runs to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> ResearchHistoryResponse:
-    total, raw_runs = await service.get_history(limit=limit, offset=offset)
+    total, raw_runs = await _fetch_history(service, limit=limit, offset=offset, session_id=session_id)
     items = []
     for r in raw_runs:
         items.append(
             ResearchHistoryItem(
                 run_id=r.get("run_id", ""),
+                session_id=r.get("session_id"),
                 query=r.get("query", ""),
                 status=r.get("status", "planning"),
                 focus_mode=r.get("focus_mode", "general"),
@@ -155,9 +199,10 @@ async def list_research_history(
 )
 async def get_research_status(
     run_id: str,
+    session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> ResearchStatusResponse:
-    status_resp = await service.get_status(run_id)
+    status_resp = await _fetch_status(service, run_id, session_id=session_id)
     if not status_resp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -173,10 +218,11 @@ async def get_research_status(
 )
 async def stream_research_progress(
     run_id: str,
+    session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ):
-    # Verify that the run exists or was initialized
-    status_resp = await service.get_status(run_id)
+    # Verify that the run exists or was initialized, and caller has session authorization
+    status_resp = await _fetch_status(service, run_id, session_id=session_id)
     if not status_resp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -193,9 +239,10 @@ async def stream_research_progress(
 )
 async def get_research_trace(
     run_id: str,
+    session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> AuditTraceResponse:
-    trace_resp = await service.get_audit_trace(run_id)
+    trace_resp = await _fetch_trace(service, run_id, session_id=session_id)
     if not trace_resp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -215,9 +262,10 @@ async def export_research_report(
         "pdf",
         description="Desired export format: 'pdf', 'markdown' (or 'md'), 'docx', 'html', or 'json'.",
     ),
+    session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> Response:
-    status_resp = await service.get_status(run_id)
+    status_resp = await _fetch_status(service, run_id, session_id=session_id)
     if not status_resp:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -264,8 +312,16 @@ async def export_research_report(
 async def steer_research_plan(
     run_id: str,
     steer_req: PlanSteerRequest,
+    session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> PlanSteerResponse:
+    if session_id and service.run_manager:
+        meta = await service.run_manager.get_run_metadata(run_id)
+        if meta and meta.get("session_id") and meta.get("session_id") != session_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Research run '{run_id}' not found.",
+            )
     success = await service.submit_plan_decision(
         run_id=run_id,
         action=steer_req.action,
@@ -292,8 +348,16 @@ async def steer_research_plan(
 )
 async def cancel_research(
     run_id: str,
+    session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> dict[str, str]:
+    if session_id and service.run_manager:
+        meta = await service.run_manager.get_run_metadata(run_id)
+        if meta and meta.get("session_id") and meta.get("session_id") != session_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Research run '{run_id}' not found.",
+            )
     cancelled = await service.cancel_job(run_id)
     if not cancelled:
         raise HTTPException(
@@ -305,3 +369,55 @@ async def cancel_research(
         "status": "cancelled",
         "message": "Research job successfully cancelled.",
     }
+
+
+@router.delete(
+    "/session/clear",
+    summary="Purge all research runs for the current ephemeral session",
+    description="Deletes all runs, indices, and checkpoints associated with this session ID.",
+)
+async def clear_session_runs(
+    session_id: str | None = Depends(get_session_id),
+    service: ResearchJobService = Depends(get_job_service),
+) -> dict[str, Any]:
+    if not session_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session ID header (X-Session-ID) or query parameter is required to clear session data.",
+        )
+    count = await service.clear_session(session_id)
+    return {
+        "session_id": session_id,
+        "cleared_runs_count": count,
+        "message": f"Cleared {count} ephemeral research runs for this session.",
+    }
+
+
+@router.delete(
+    "/{run_id}",
+    response_model=DeleteRunResponse,
+    summary="Purge a research run and all ephemeral data",
+    description="Immediately deletes all Redis metadata, checkpoints, trace logs, and reports for this run.",
+)
+async def delete_research_run(
+    run_id: str,
+    session_id: str | None = Depends(get_session_id),
+    service: ResearchJobService = Depends(get_job_service),
+) -> DeleteRunResponse:
+    status_resp = await service.get_status(run_id, session_id=session_id)
+    if not status_resp:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Research run '{run_id}' not found.",
+        )
+    success = await service.clear_run(run_id, session_id=session_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Unauthorized to delete this research run.",
+        )
+    return DeleteRunResponse(
+        run_id=run_id,
+        deleted=True,
+        message="Research run and all associated temporary data have been permanently purged.",
+    )

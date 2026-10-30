@@ -101,17 +101,20 @@ class ResearchJobService:
         request: ResearchRequest,
         llm_override: BaseChatModel | None = None,
         mode: str | None = None,
+        session_id: str | None = None,
     ) -> None:
         """Schedule and launch a research job (via decoupled Redis queue or in-process task)."""
         await self.initialize()
 
         assert self.run_manager is not None
+        effective_session_id = session_id or getattr(request, "session_id", None)
         # Initialize run metadata in Redis
         await self.run_manager.init_run(
             run_id=run_id,
             query=request.query,
             focus_mode=request.focus_mode,
             hitl_enabled=request.hitl_enabled,
+            session_id=effective_session_id,
         )
 
         effective_mode = mode or settings.WORKER_MODE
@@ -120,7 +123,11 @@ class ResearchJobService:
         # for background worker execution (<10ms).
         if effective_mode == "decoupled":
             assert self.queue is not None
-            await self.queue.enqueue(run_id=run_id, request=request)
+            await self.queue.enqueue(
+                run_id=run_id,
+                request=request,
+                session_id=effective_session_id,
+            )
             await self.broadcaster.broadcast(
                 run_id=run_id,
                 event="job_queued",
@@ -130,7 +137,11 @@ class ResearchJobService:
                     "message": "Research job queued and dispatched to distributed worker.",
                 },
             )
-            logger.info("Dispatched research job to Redis queue", run_id=run_id)
+            logger.info(
+                "Dispatched research job to Redis queue",
+                run_id=run_id,
+                session_id=effective_session_id,
+            )
             return
 
         # Embedded / In-process execution mode:
@@ -738,12 +749,14 @@ class ResearchJobService:
                 zero_out_secrets(request.api_keys)
                 request.api_keys = None
 
-    async def get_status(self, run_id: str) -> ResearchStatusResponse | None:
+    async def get_status(
+        self, run_id: str, session_id: str | None = None
+    ) -> ResearchStatusResponse | None:
         """Fetch current status and report (if completed) for a given run ID."""
         await self.initialize()
         assert self.run_manager is not None
 
-        meta = await self.run_manager.get_run_metadata(run_id)
+        meta = await self.run_manager.get_run_metadata(run_id, session_id=session_id)
         if not meta:
             return None
 
@@ -830,6 +843,7 @@ class ResearchJobService:
 
         return ResearchStatusResponse(
             run_id=run_id,
+            session_id=meta.get("session_id"),
             query=meta.get("query", ""),
             status=status,
             progress_pct=progress_pct,
@@ -853,14 +867,19 @@ class ResearchJobService:
             updated_at=meta.get("updated_at"),
         )
 
-    async def get_audit_trace(self, run_id: str) -> AuditTraceResponse | None:
+    async def get_audit_trace(
+        self, run_id: str, session_id: str | None = None
+    ) -> AuditTraceResponse | None:
         """Retrieve the complete audit trail and step-by-step metrics for a run."""
         await self.initialize()
         assert self.run_manager is not None
 
+        meta = await self.run_manager.get_run_metadata(run_id, session_id=session_id)
+        if not meta:
+            return None
+
         live_spans = get_run_spans(run_id)
         raw_audit = await self.run_manager.get_audit_log(run_id)
-        meta = await self.run_manager.get_run_metadata(run_id) or {}
 
         if raw_audit:
             audit = AuditLog.model_validate(raw_audit)
@@ -967,12 +986,28 @@ class ResearchJobService:
         return []
 
     async def get_history(
-        self, limit: int = 20, offset: int = 0
+        self, limit: int = 20, offset: int = 0, session_id: str | None = None
     ) -> tuple[int, list[dict[str, Any]]]:
         """Fetch paginated recent runs from the Redis retention index."""
         await self.initialize()
         assert self.run_manager is not None
-        return await self.run_manager.list_recent_runs(limit=limit, offset=offset)
+        return await self.run_manager.list_recent_runs(
+            limit=limit, offset=offset, session_id=session_id
+        )
+
+    async def clear_run(self, run_id: str, session_id: str | None = None) -> bool:
+        """Purge metadata, step records, report, and checkpoints for a given run."""
+        await self.initialize()
+        if self.run_manager:
+            return await self.run_manager.clear_run(run_id, session_id=session_id)
+        return False
+
+    async def clear_session(self, session_id: str) -> int:
+        """Purge all runs and index for a given ephemeral session."""
+        await self.initialize()
+        if self.run_manager:
+            return await self.run_manager.clear_session(session_id)
+        return 0
 
     async def wait_for_plan_decision(self, run_id: str, timeout: float = 900.0) -> dict[str, Any]:
         """Block graph worker until human steering action is submitted or timeout occurs."""

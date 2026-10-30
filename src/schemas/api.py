@@ -134,6 +134,10 @@ class ResearchRequest(BaseModel):
         default=None,
         description="Optional ephemeral user API keys for BYOK execution.",
     )
+    session_id: str | None = Field(
+        default=None,
+        description="Optional ephemeral session ID for cross-user isolation and search-and-forget.",
+    )
 
 
 class PlanSteerAction(str):
@@ -168,10 +172,24 @@ class PlanSteerResponse(BaseModel):
     message: str
 
 
+class DeleteRunResponse(BaseModel):
+    """Response payload after purging an ephemeral research run."""
+
+    run_id: str = Field(description="The unique run identifier that was purged.")
+    deleted: bool = Field(default=True, description="Whether the run data was deleted.")
+    message: str = Field(
+        default="Research run and all temporary artifacts permanently purged.",
+        description="Status message.",
+    )
+
+
 class ResearchSubmissionResponse(BaseModel):
     """Immediate acknowledgment returned upon job submission (HTTP 202)."""
 
     run_id: str = Field(description="Unique identifier for tracking the research job.")
+    session_id: str | None = Field(
+        default=None, description="Ephemeral session ID bound to this run."
+    )
     status: str = Field(default="queued", description="Initial lifecycle state of the run.")
     created_at: str = Field(
         default_factory=lambda: datetime.now(UTC).isoformat(),
@@ -187,6 +205,7 @@ class ResearchStatusResponse(BaseModel):
     """Current progress and results status for a research run."""
 
     run_id: str
+    session_id: str | None = None
     query: str
     status: str
     progress_pct: int = Field(
@@ -224,6 +243,7 @@ class ResearchHistoryItem(BaseModel):
     """Summary of a past research job retained in Redis."""
 
     run_id: str
+    session_id: str | None = None
     query: str
     status: str
     focus_mode: str | None = Field(

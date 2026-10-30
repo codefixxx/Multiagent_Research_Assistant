@@ -338,3 +338,109 @@ async def test_security_headers_present(client):
         assert headers.get("referrer-policy") == "strict-origin-when-cross-origin", (
             f"Missing on {endpoint}"
         )
+
+
+@pytest.mark.asyncio
+async def test_ephemeral_session_cross_user_isolation(client):
+    """Verify Option A: Ephemeral session headers isolate runs and prevent cross-user visibility."""
+    sess_1 = "sess-user-1111"
+    sess_2 = "sess-user-2222"
+
+    # 1. User 1 submits research
+    res1 = await client.post(
+        "/research",
+        json={"query": "User 1 Confidential Analysis"},
+        headers={"X-Session-ID": sess_1},
+    )
+    assert res1.status_code == 202
+    run1_data = res1.json()
+    run1_id = run1_data["run_id"]
+    assert run1_data["session_id"] == sess_1
+    assert res1.headers.get("X-Session-ID") == sess_1
+
+    # 2. User 2 submits research
+    res2 = await client.post(
+        "/research",
+        json={"query": "User 2 Proprietary Architecture"},
+        headers={"X-Session-ID": sess_2},
+    )
+    assert res2.status_code == 202
+    run2_data = res2.json()
+    run2_id = run2_data["run_id"]
+    assert run2_data["session_id"] == sess_2
+
+    # 3. User 1 checks history: sees ONLY User 1 run
+    hist1 = await client.get("/research/history", headers={"X-Session-ID": sess_1})
+    assert hist1.status_code == 200
+    h1_runs = hist1.json()["runs"]
+    h1_ids = [r["run_id"] for r in h1_runs]
+    assert run1_id in h1_ids
+    assert run2_id not in h1_ids
+
+    # 4. User 2 checks history: sees ONLY User 2 run
+    hist2 = await client.get("/research/history", headers={"X-Session-ID": sess_2})
+    assert hist2.status_code == 200
+    h2_runs = hist2.json()["runs"]
+    h2_ids = [r["run_id"] for r in h2_runs]
+    assert run2_id in h2_ids
+    assert run1_id not in h2_ids
+
+    # 5. Cross-user access blocked on /research/{run_id}
+    # User 2 tries to access User 1's run -> 404 Not Found
+    cross_get = await client.get(f"/research/{run1_id}", headers={"X-Session-ID": sess_2})
+    assert cross_get.status_code == 404
+
+    # Unauthenticated (missing session header) access to session-scoped run -> 404 Not Found
+    unauth_get = await client.get(f"/research/{run1_id}")
+    assert unauth_get.status_code == 404
+
+    # User 1 accesses own run -> 200 OK
+    own_get = await client.get(f"/research/{run1_id}", headers={"X-Session-ID": sess_1})
+    assert own_get.status_code == 200
+    assert own_get.json()["run_id"] == run1_id
+
+    # 6. Cross-user deletion blocked
+    cross_del = await client.delete(f"/research/{run1_id}", headers={"X-Session-ID": sess_2})
+    assert cross_del.status_code == 404
+
+    # 7. Owner deletes their own run (Search and Forget)
+    own_del = await client.delete(f"/research/{run1_id}", headers={"X-Session-ID": sess_1})
+    assert own_del.status_code == 200
+    assert own_del.json()["deleted"] is True
+
+    # Run is now gone
+    after_del_get = await client.get(f"/research/{run1_id}", headers={"X-Session-ID": sess_1})
+    assert after_del_get.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_clear_session_endpoint(client):
+    """Verify DELETE /research/session/clear wipes all ephemeral session data."""
+    wipe_sess = "session-wipe-test-999"
+
+    # Submit 2 runs for this session
+    await client.post(
+        "/research",
+        json={"query": "Wipe Query 1"},
+        headers={"X-Session-ID": wipe_sess},
+    )
+    await client.post(
+        "/research",
+        json={"query": "Wipe Query 2"},
+        headers={"X-Session-ID": wipe_sess},
+    )
+
+    # Verify history has 2 items
+    hist_before = await client.get("/research/history", headers={"X-Session-ID": wipe_sess})
+    assert hist_before.status_code == 200
+    assert len(hist_before.json()["runs"]) == 2
+
+    # Clear entire session
+    clear_res = await client.delete("/research/session/clear", headers={"X-Session-ID": wipe_sess})
+    assert clear_res.status_code == 200
+    assert clear_res.json()["cleared_runs_count"] == 2
+
+    # History is now 0
+    hist_after = await client.get("/research/history", headers={"X-Session-ID": wipe_sess})
+    assert hist_after.status_code == 200
+    assert len(hist_after.json()["runs"]) == 0

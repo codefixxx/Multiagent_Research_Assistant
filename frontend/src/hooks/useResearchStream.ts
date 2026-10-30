@@ -11,6 +11,7 @@ import type {
   ApiKeys,
   ResearchPlan
 } from '../types';
+import { getSessionId } from '../utils/session';
 
 export function useResearchStream() {
   const [currentRunId, setCurrentRunId] = useState<string | null>(null);
@@ -78,7 +79,9 @@ export function useResearchStream() {
 
   const loadTrace = useCallback(async (runId: string) => {
     try {
-      const res = await fetch(`/research/${runId}/trace`);
+      const res = await fetch(`/research/${runId}/trace`, {
+        headers: { 'X-Session-ID': getSessionId() }
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.spans && Array.isArray(data.spans)) {
@@ -366,7 +369,8 @@ export function useResearchStream() {
     }
 
     try {
-      const es = new EventSource(`/research/${runId}/stream`);
+      const sessionId = getSessionId();
+      const es = new EventSource(`/research/${runId}/stream?session_id=${encodeURIComponent(sessionId)}`);
       eventSourceRef.current = es;
 
       const namedEvents = [
@@ -411,7 +415,9 @@ export function useResearchStream() {
 
     pollIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/research/${runId}`);
+        const res = await fetch(`/research/${runId}`, {
+          headers: { 'X-Session-ID': getSessionId() }
+        });
         if (!res.ok) return;
         const data: ResearchJobData = await res.json();
         
@@ -513,12 +519,16 @@ export function useResearchStream() {
         focus_mode: focusMode,
         hitl_enabled: hitlEnabled,
         model_matrix: modelMatrix,
-        api_keys: apiKeys
+        api_keys: apiKeys,
+        session_id: getSessionId()
       };
 
       const res = await fetch('/research', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-ID': getSessionId()
+        },
         body: JSON.stringify(payload)
       });
 
@@ -554,7 +564,8 @@ export function useResearchStream() {
       setCurrentRunId(runId);
       
       try {
-        localStorage.setItem('multiagent_last_run_id', runId);
+        sessionStorage.setItem('multiagent_last_run_id', runId);
+        localStorage.removeItem('multiagent_last_run_id');
         window.history.replaceState({}, '', '?run_id=' + runId);
       } catch {}
 
@@ -628,7 +639,10 @@ export function useResearchStream() {
 
       const res = await fetch(`/research/${currentRunId}/steer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Session-ID': getSessionId()
+        },
         body: JSON.stringify({
           action,
           modified_plan: modifiedPlan,
@@ -656,7 +670,8 @@ export function useResearchStream() {
 
       setCurrentRunId(runId);
       try {
-        localStorage.setItem('multiagent_last_run_id', runId);
+        sessionStorage.setItem('multiagent_last_run_id', runId);
+        localStorage.removeItem('multiagent_last_run_id');
         window.history.replaceState({}, '', '?run_id=' + runId);
       } catch {}
 
@@ -673,7 +688,9 @@ export function useResearchStream() {
       setConsolidatorState('waiting');
       setWriterState('waiting');
 
-      const res = await fetch(`/research/${runId}`);
+      const res = await fetch(`/research/${runId}`, {
+        headers: { 'X-Session-ID': getSessionId() }
+      });
       if (!res.ok) return;
       const data: ResearchJobData = await res.json();
       if (data && data.run_id) {
@@ -748,7 +765,10 @@ export function useResearchStream() {
   // Load existing run on mount if URL has ?run_id=
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const runIdFromUrl = params.get('run_id') || localStorage.getItem('multiagent_last_run_id');
+    const runIdFromUrl =
+      params.get('run_id') ||
+      sessionStorage.getItem('multiagent_last_run_id') ||
+      localStorage.getItem('multiagent_last_run_id');
 
     if (runIdFromUrl) {
       loadRun(runIdFromUrl);

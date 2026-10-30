@@ -13,8 +13,11 @@ import {
   Loader2,
   Sparkles,
   Layers,
-  Ban
+  Ban,
+  Trash2,
+  ShieldCheck
 } from 'lucide-react';
+import { getSessionId } from '../utils/session';
 
 interface HistoryDrawerProps {
   isOpen: boolean;
@@ -48,6 +51,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
   const [runs, setRuns] = useState<ResearchHistoryItem[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -55,7 +59,11 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const res = await fetch('/research/history?limit=50&offset=0');
+      const res = await fetch('/research/history?limit=50&offset=0', {
+        headers: {
+          'X-Session-ID': getSessionId()
+        }
+      });
       if (!res.ok) {
         throw new Error(`Server returned HTTP ${res.status}`);
       }
@@ -65,6 +73,46 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
     } catch (err: any) {
       console.warn('Failed fetching research history:', err);
       setError(err.message || 'Unable to load research history');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteRun = async (e: React.MouseEvent, runId: string) => {
+    e.stopPropagation();
+    setIsDeleting(runId);
+    try {
+      const res = await fetch(`/research/${runId}`, {
+        method: 'DELETE',
+        headers: { 'X-Session-ID': getSessionId() },
+      });
+      if (res.ok) {
+        setRuns(prev => prev.filter(r => r.run_id !== runId));
+        setTotalCount(prev => Math.max(0, prev - 1));
+      }
+    } catch (err) {
+      console.warn('Failed deleting run:', err);
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
+  const clearAllSessionRuns = async () => {
+    if (!confirm('Permanently forget and erase all research runs in this session? All reports, findings, and checkpoints will be deleted from memory.')) {
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const res = await fetch('/research/session/clear', {
+        method: 'DELETE',
+        headers: { 'X-Session-ID': getSessionId() },
+      });
+      if (res.ok) {
+        setRuns([]);
+        setTotalCount(0);
+      }
+    } catch (err) {
+      console.warn('Failed clearing session history:', err);
     } finally {
       setIsLoading(false);
     }
@@ -104,6 +152,17 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
             </div>
           </div>
           <div className="flex items-center space-x-2">
+            {runs.length > 0 && (
+              <button
+                onClick={clearAllSessionRuns}
+                disabled={isLoading}
+                title="Purge all runs in this session"
+                className="inline-flex items-center space-x-1.5 px-2.5 py-1 text-xs text-[#e5566f] hover:bg-[#e5566f]/15 border border-[#e5566f]/30 rounded transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>Forget All</span>
+              </button>
+            )}
             <button
               onClick={fetchHistory}
               disabled={isLoading}
@@ -122,13 +181,14 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
           </div>
         </div>
 
-        {/* 24-Hour Retention Banner */}
+        {/* Search & Forget Ephemeral Cache Banner */}
         <div className="px-6 py-2.5 bg-[#171719] border-b border-[#1b1a1f] flex items-center justify-between text-[11px] text-[#8a8c92]">
           <span className="flex items-center space-x-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#4a8ad6]" />
-            <span>24-Hour In-Memory Cache (TTL: 86,400s)</span>
+            <ShieldCheck className="w-3.5 h-3.5 text-[#44a282]" />
+            <span className="text-[#e2e8f0] font-medium">Search & Forget Session</span>
+            <span className="text-[#8a8c92]">• Isolated Ephemeral Cache</span>
           </span>
-          <span className="text-[#8a8c92]/80">Export dossiers to persist permanently</span>
+          <span className="text-[#8a8c92]/80">Erased when browser tab closes</span>
         </div>
 
         {/* Search & Filter Bar */}
@@ -303,25 +363,42 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
 
                 {/* Card Action Footer */}
                 <div className="pt-2 border-t border-[#222224] flex items-center justify-between">
-                  {/* Load Run Button */}
-                  {isActive ? (
-                    <span className="inline-flex items-center space-x-1.5 text-xs text-[#4a8ad6] font-medium">
-                      <Layers className="w-3.5 h-3.5" />
-                      <span>Loaded in Studio</span>
-                    </span>
-                  ) : (
+                  {/* Load Run & Forget Buttons */}
+                  <div className="flex items-center space-x-2">
+                    {isActive ? (
+                      <span className="inline-flex items-center space-x-1.5 text-xs text-[#4a8ad6] font-medium">
+                        <Layers className="w-3.5 h-3.5" />
+                        <span>Loaded in Studio</span>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectRun(run.run_id);
+                          onClose();
+                        }}
+                        className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-xs font-medium text-white transition-colors cursor-pointer"
+                      >
+                        <ExternalLink className="w-3 h-3 text-[#4a8ad6]" />
+                        <span>Open in Studio</span>
+                      </button>
+                    )}
+
                     <button
                       type="button"
-                      onClick={() => {
-                        onSelectRun(run.run_id);
-                        onClose();
-                      }}
-                      className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-xs font-medium text-white transition-colors cursor-pointer"
+                      onClick={(e) => deleteRun(e, run.run_id)}
+                      disabled={isDeleting === run.run_id}
+                      title="Forget and purge this run from memory"
+                      className="inline-flex items-center space-x-1 px-2 py-1 rounded bg-[#212023] hover:bg-[#e5566f]/20 border border-[#222224] hover:border-[#e5566f]/40 text-xs font-medium text-[#8a8c92] hover:text-[#e5566f] transition-colors cursor-pointer disabled:opacity-50"
                     >
-                      <ExternalLink className="w-3 h-3 text-[#4a8ad6]" />
-                      <span>Open in Studio</span>
+                      {isDeleting === run.run_id ? (
+                        <Loader2 className="w-3 h-3 animate-spin text-[#e5566f]" />
+                      ) : (
+                        <Trash2 className="w-3 h-3" />
+                      )}
+                      <span>Forget</span>
                     </button>
-                  )}
+                  </div>
 
                   {/* Direct Export Links if Report Exists */}
                   {run.has_report && (
