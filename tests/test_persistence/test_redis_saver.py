@@ -280,8 +280,10 @@ async def test_session_scoped_isolation():
     # 3. Cross-session access rejection on metadata lookup
     # Bob trying to view Alice's run by ID returns None
     assert await manager.get_run_metadata("run-alice-1", session_id=sess_b) is None
-    # Unauthenticated lookup (session_id=None) on a session-bound run returns None
-    assert await manager.get_run_metadata("run-alice-1", session_id=None) is None
+    # Internal server lookup without session filtering returns run data
+    raw_meta = await manager.get_run_metadata("run-alice-1", session_id=None)
+    assert raw_meta is not None
+    assert raw_meta["run_id"] == "run-alice-1"
     # Alice accessing her own run succeeds
     alice_meta = await manager.get_run_metadata("run-alice-1", session_id=sess_a)
     assert alice_meta is not None

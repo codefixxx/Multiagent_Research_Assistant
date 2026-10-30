@@ -315,7 +315,7 @@ async def steer_research_plan(
     session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> PlanSteerResponse:
-    if session_id and service.run_manager:
+    if service.run_manager:
         meta = await service.run_manager.get_run_metadata(run_id)
         if meta and meta.get("session_id") and meta.get("session_id") != session_id:
             raise HTTPException(
@@ -327,6 +327,7 @@ async def steer_research_plan(
         action=steer_req.action,
         modified_plan=steer_req.modified_plan,
         feedback=steer_req.feedback,
+        session_id=session_id,
     )
     if not success:
         raise HTTPException(
@@ -351,7 +352,7 @@ async def cancel_research(
     session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> dict[str, str]:
-    if session_id and service.run_manager:
+    if service.run_manager:
         meta = await service.run_manager.get_run_metadata(run_id)
         if meta and meta.get("session_id") and meta.get("session_id") != session_id:
             raise HTTPException(

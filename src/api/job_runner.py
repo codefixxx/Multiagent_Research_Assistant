@@ -767,8 +767,12 @@ class ResearchJobService:
         await self.initialize()
         assert self.run_manager is not None
 
-        meta = await self.run_manager.get_run_metadata(run_id, session_id=session_id)
+        meta = await self.run_manager.get_run_metadata(run_id)
         if not meta:
+            return None
+
+        run_session = meta.get("session_id")
+        if run_session is not None and run_session != session_id:
             return None
 
         status = meta.get("status", "planning")
@@ -885,8 +889,12 @@ class ResearchJobService:
         await self.initialize()
         assert self.run_manager is not None
 
-        meta = await self.run_manager.get_run_metadata(run_id, session_id=session_id)
+        meta = await self.run_manager.get_run_metadata(run_id)
         if not meta:
+            return None
+
+        run_session = meta.get("session_id")
+        if run_session is not None and run_session != session_id:
             return None
 
         live_spans = get_run_spans(run_id)
@@ -1055,6 +1063,7 @@ class ResearchJobService:
         action: str,
         modified_plan: ResearchPlan | None = None,
         feedback: str | None = None,
+        session_id: str | None = None,
     ) -> bool:
         """Process and dispatch human steering action for a run awaiting approval."""
         await self.initialize()
@@ -1067,6 +1076,9 @@ class ResearchJobService:
             return False
 
         if meta:
+            run_session = meta.get("session_id")
+            if run_session is not None and session_id is not None and run_session != session_id:
+                return False
             current_status = meta.get("status")
             if current_status not in ("awaiting_approval", "planning") and not is_locally_waiting:
                 logger.warning(

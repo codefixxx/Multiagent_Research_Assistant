@@ -308,6 +308,7 @@ def build_research_graph(
                 "plan_approved": True,
                 "status": "researching",
                 "steering_feedback": None,
+                "start_time": time.time(),
             }
 
         elif action == "regenerate":
@@ -326,6 +327,7 @@ def build_research_graph(
                 "plan_approved": False,
                 "steering_feedback": feedback,
                 "status": "planning",
+                "start_time": time.time(),
             }
 
         elif action == "reject":
@@ -352,6 +354,7 @@ def build_research_graph(
                 "plan_approved": True,
                 "status": "researching",
                 "steering_feedback": None,
+                "start_time": time.time(),
             }
 
     async def researcher_node(payload: Any) -> dict[str, Any]:

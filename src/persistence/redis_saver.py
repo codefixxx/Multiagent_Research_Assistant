@@ -394,8 +394,8 @@ class RedisRunManager:
         data_str = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         data = json.loads(data_str)
         run_session = data.get("session_id")
-        if run_session is not None:
-            # If the run is bound to an ephemeral session, require matching session_id
+        if session_id is not None and run_session is not None:
+            # If caller provides session_id, enforce ownership matching
             if session_id != run_session:
                 return None
         return data

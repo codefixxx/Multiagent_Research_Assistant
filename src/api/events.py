@@ -128,11 +128,17 @@ class EventBroadcaster:
         for past_event in past_events:
             yield past_event
 
+        seen_events: set[str] = set(past_events)
+        terminal_markers = (
+            "event: job_completed",
+            "event: job_failed",
+            "event: job_cancelled",
+            "event: budget_exceeded",
+        )
+
         # Check if the run has already finished
         if past_events and any(
-            '"event": "job_completed"' in pe
-            or '"event": "job_failed"' in pe
-            or '"event": "budget_exceeded"' in pe
+            any(tm in pe for tm in terminal_markers)
             for pe in past_events
         ):
             if pubsub is not None:
@@ -146,49 +152,53 @@ class EventBroadcaster:
                     self._subscribers[run_id].discard(queue)
             return
 
-        # Stream live events
+        # Stream live events (supporting both cross-process Redis pubsub and in-process queue)
         try:
-            if pubsub is not None:
-                while True:
-                    try:
-                        msg = await pubsub.get_message(
-                            ignore_subscribe_messages=True,
-                            timeout=heartbeat_interval,
-                        )
-                        if msg and msg.get("type") == "message":
-                            raw_data = msg.get("data")
-                            data_str = (
-                                raw_data.decode("utf-8")
-                                if isinstance(raw_data, bytes)
-                                else str(raw_data)
-                            )
-                            yield data_str
-                            if (
-                                "event: job_completed" in data_str
-                                or "event: job_failed" in data_str
-                                or "event: budget_exceeded" in data_str
-                            ):
+            while True:
+                next_msg: str | None = None
+                if pubsub is not None:
+                    get_queue_task = asyncio.create_task(queue.get())
+                    get_pubsub_task = asyncio.create_task(
+                        pubsub.get_message(ignore_subscribe_messages=True, timeout=heartbeat_interval)
+                    )
+                    done, pending = await asyncio.wait(
+                        [get_queue_task, get_pubsub_task],
+                        timeout=heartbeat_interval,
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                    for task in pending:
+                        task.cancel()
+
+                    for task in done:
+                        try:
+                            res = task.result()
+                            if task is get_queue_task and res:
+                                next_msg = res
                                 break
-                        elif msg is None:
-                            yield ": ping keep-alive\n\n"
-                    except (asyncio.CancelledError, GeneratorExit):
-                        break
-                    except Exception as e:
-                        logger.debug("Error in pubsub message polling", error=str(e))
-                        break
-            else:
-                while True:
+                            elif task is get_pubsub_task and res and res.get("type") == "message":
+                                raw_data = res.get("data")
+                                next_msg = (
+                                    raw_data.decode("utf-8")
+                                    if isinstance(raw_data, bytes)
+                                    else str(raw_data)
+                                )
+                                break
+                        except Exception:
+                            pass
+                else:
                     try:
-                        message = await asyncio.wait_for(queue.get(), timeout=heartbeat_interval)
-                        yield message
-                        if (
-                            "event: job_completed" in message
-                            or "event: job_failed" in message
-                            or "event: budget_exceeded" in message
-                        ):
-                            break
+                        next_msg = await asyncio.wait_for(queue.get(), timeout=heartbeat_interval)
                     except TimeoutError:
-                        yield ": ping keep-alive\n\n"
+                        next_msg = None
+
+                if next_msg is not None:
+                    if next_msg not in seen_events:
+                        seen_events.add(next_msg)
+                        yield next_msg
+                        if any(marker in next_msg for marker in terminal_markers):
+                            break
+                else:
+                    yield ": ping keep-alive\n\n"
         finally:
             if pubsub is not None:
                 try:
