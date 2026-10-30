@@ -405,7 +405,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                     <div className="flex items-center space-x-1.5 text-[11px]">
                       <span className="text-[#6a6c72]">Export:</span>
                       <a
-                        href={`/research/${run.run_id}/export?format=pdf`}
+                        href={`/research/${run.run_id}/export?format=pdf&session_id=${encodeURIComponent(getSessionId())}`}
                         target="_blank"
                         rel="noreferrer"
                         className="px-1.5 py-0.5 rounded bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors"
@@ -414,7 +414,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                         PDF
                       </a>
                       <a
-                        href={`/research/${run.run_id}/export?format=docx`}
+                        href={`/research/${run.run_id}/export?format=docx&session_id=${encodeURIComponent(getSessionId())}`}
                         target="_blank"
                         rel="noreferrer"
                         className="px-1.5 py-0.5 rounded bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors"
@@ -423,7 +423,7 @@ export const HistoryDrawer: React.FC<HistoryDrawerProps> = ({
                         Word
                       </a>
                       <a
-                        href={`/research/${run.run_id}/export?format=md`}
+                        href={`/research/${run.run_id}/export?format=md&session_id=${encodeURIComponent(getSessionId())}`}
                         target="_blank"
                         rel="noreferrer"
                         className="px-1.5 py-0.5 rounded bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors"

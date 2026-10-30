@@ -264,10 +264,45 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     triggerAutoPurgeIfNeeded(jobData?.run_id);
   };
 
-  const handleExportBackend = (format: 'pdf' | 'docx' | 'html' | 'markdown') => {
+  const [isExporting, setIsExporting] = React.useState<string | null>(null);
+
+  const handleExportBackend = async (format: 'pdf' | 'docx' | 'html' | 'markdown') => {
     if (!jobData?.run_id) return;
-    window.open(`/research/${jobData.run_id}/export?format=${format}`, '_blank');
-    triggerAutoPurgeIfNeeded(jobData.run_id);
+    try {
+      setIsExporting(format);
+      const sessionId = getSessionId();
+      const res = await fetch(`/research/${jobData.run_id}/export?format=${format}&session_id=${encodeURIComponent(sessionId)}`, {
+        headers: {
+          'X-Session-ID': sessionId,
+        },
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        alert(`Export failed (${res.status}): ${errJson.error || errJson.detail || res.statusText}`);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const disposition = res.headers.get('Content-Disposition');
+      let filename = `research_report_${jobData.run_id.slice(0, 8)}.${format === 'markdown' ? 'md' : format}`;
+      if (disposition && disposition.includes('filename=')) {
+        const match = disposition.match(/filename="?([^";]+)"?/);
+        if (match && match[1]) filename = match[1];
+      }
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      triggerAutoPurgeIfNeeded(jobData.run_id);
+    } catch (err: any) {
+      console.error('Export error:', err);
+      alert(`Export error: ${err.message || 'Network error'}`);
+    } finally {
+      setIsExporting(null);
+    }
   };
 
   // Convert technical raw log into clean human update
@@ -509,21 +544,23 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
               <div className="flex items-center space-x-1.5 text-xs">
                 <button
                   type="button"
+                  disabled={Boolean(isExporting)}
                   onClick={() => handleExportBackend('pdf')}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#1e293b] hover:bg-[#334155] border border-[#3b82f6]/40 text-[#93c5fd] hover:text-white transition-colors cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#1e293b] hover:bg-[#334155] disabled:opacity-50 border border-[#3b82f6]/40 text-[#93c5fd] hover:text-white transition-colors cursor-pointer"
                   title="Download Publication-Grade PDF with Citations"
                 >
-                  <Download className="w-3.5 h-3.5 text-[#60a5fa]" />
-                  <span className="font-medium">PDF</span>
+                  <Download className={`w-3.5 h-3.5 text-[#60a5fa] ${isExporting === 'pdf' ? 'animate-bounce' : ''}`} />
+                  <span className="font-medium">{isExporting === 'pdf' ? 'Exporting...' : 'PDF'}</span>
                 </button>
                 <button
                   type="button"
+                  disabled={Boolean(isExporting)}
                   onClick={() => handleExportBackend('docx')}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-[#212023] hover:bg-[#2a292e] disabled:opacity-50 border border-[#222224] text-[#8a8c92] hover:text-white transition-colors cursor-pointer"
                   title="Download Microsoft Word (.docx)"
                 >
-                  <FileText className="w-3.5 h-3.5 text-[#818cf8]" />
-                  <span>Word</span>
+                  <FileText className={`w-3.5 h-3.5 text-[#818cf8] ${isExporting === 'docx' ? 'animate-bounce' : ''}`} />
+                  <span>{isExporting === 'docx' ? 'Exporting...' : 'Word'}</span>
                 </button>
                 <button
                   type="button"

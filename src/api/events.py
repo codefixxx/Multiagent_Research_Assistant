@@ -84,7 +84,7 @@ class EventBroadcaster:
     ) -> AsyncGenerator[str, None]:
         """Subscribe to a run's event stream, yielding SSE formatted strings.
 
-        Replays past events from Redis or memory, then streams live events via Redis Pub/Sub or local queue.
+        Replays past events from Redis or memory, then streams live events via Redis stream list or local queue.
         """
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
 
@@ -93,30 +93,17 @@ class EventBroadcaster:
                 self._subscribers[run_id] = set()
             self._subscribers[run_id].add(queue)
 
-        pubsub: Any = None
-        if self.redis is not None:
-            try:
-                pubsub = self.redis.pubsub()
-                await pubsub.subscribe(EVENT_CHANNEL.format(run_id=run_id))
-            except Exception as e:
-                logger.debug(
-                    "Failed opening Redis pubsub, falling back to local queue", error=str(e)
-                )
-                if pubsub:
-                    try:
-                        await pubsub.aclose()
-                    except Exception:
-                        pass
-                pubsub = None
-
         # Replay historical events
         past_events: list[str] = []
+        stream_cursor = 0
+        stream_key = EVENT_STREAM_KEY.format(run_id=run_id)
+
         if self.redis is not None:
             try:
-                stream_key = EVENT_STREAM_KEY.format(run_id=run_id)
                 raw_items = await self.redis.lrange(stream_key, 0, -1)
                 for item in raw_items:
                     past_events.append(item.decode("utf-8") if isinstance(item, bytes) else item)
+                stream_cursor = len(past_events)
             except Exception:
                 pass
 
@@ -128,7 +115,6 @@ class EventBroadcaster:
         for past_event in past_events:
             yield past_event
 
-        seen_events: set[str] = set(past_events)
         terminal_markers = (
             "event: job_completed",
             "event: job_failed",
@@ -141,71 +127,49 @@ class EventBroadcaster:
             any(tm in pe for tm in terminal_markers)
             for pe in past_events
         ):
-            if pubsub is not None:
-                try:
-                    await pubsub.unsubscribe(EVENT_CHANNEL.format(run_id=run_id))
-                    await pubsub.aclose()
-                except Exception:
-                    pass
             async with self._lock:
                 if run_id in self._subscribers:
                     self._subscribers[run_id].discard(queue)
             return
 
-        # Stream live events (supporting both cross-process Redis pubsub and in-process queue)
+        # Stream live events (supporting cross-process Redis stream list and in-process queue)
+        last_ping = asyncio.get_running_loop().time()
         try:
             while True:
-                next_msg: str | None = None
-                if pubsub is not None:
-                    get_queue_task = asyncio.create_task(queue.get())
-                    get_pubsub_task = asyncio.create_task(
-                        pubsub.get_message(ignore_subscribe_messages=True, timeout=heartbeat_interval)
-                    )
-                    done, pending = await asyncio.wait(
-                        [get_queue_task, get_pubsub_task],
-                        timeout=heartbeat_interval,
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    for task in pending:
-                        task.cancel()
+                yielded = False
 
-                    for task in done:
-                        try:
-                            res = task.result()
-                            if task is get_queue_task and res:
-                                next_msg = res
-                                break
-                            elif task is get_pubsub_task and res and res.get("type") == "message":
-                                raw_data = res.get("data")
-                                next_msg = (
-                                    raw_data.decode("utf-8")
-                                    if isinstance(raw_data, bytes)
-                                    else str(raw_data)
-                                )
-                                break
-                        except Exception:
-                            pass
-                else:
+                # 1. Fetch new items from Redis stream list (cross-process decoupled workers)
+                if self.redis is not None:
                     try:
-                        next_msg = await asyncio.wait_for(queue.get(), timeout=heartbeat_interval)
-                    except TimeoutError:
-                        next_msg = None
+                        new_items = await self.redis.lrange(stream_key, stream_cursor, -1)
+                        if new_items:
+                            stream_cursor += len(new_items)
+                            for raw in new_items:
+                                msg = raw.decode("utf-8") if isinstance(raw, bytes) else raw
+                                yield msg
+                                yielded = True
+                                if any(marker in msg for marker in terminal_markers):
+                                    return
+                    except Exception as err:
+                        logger.debug("Redis stream read error", error=str(err), run_id=run_id)
 
-                if next_msg is not None:
-                    if next_msg not in seen_events:
-                        seen_events.add(next_msg)
-                        yield next_msg
-                        if any(marker in next_msg for marker in terminal_markers):
-                            break
-                else:
-                    yield ": ping keep-alive\n\n"
-        finally:
-            if pubsub is not None:
+                # 2. Fetch from local queue (in-process delivery)
                 try:
-                    await pubsub.unsubscribe(EVENT_CHANNEL.format(run_id=run_id))
-                    await pubsub.aclose()
-                except Exception:
+                    local_msg = await asyncio.wait_for(queue.get(), timeout=0.25)
+                    if self.redis is None:
+                        yield local_msg
+                        yielded = True
+                        if any(marker in local_msg for marker in terminal_markers):
+                            return
+                except TimeoutError:
                     pass
+
+                # 3. Heartbeat keep-alive
+                now = asyncio.get_running_loop().time()
+                if not yielded and (now - last_ping >= heartbeat_interval):
+                    yield ": ping keep-alive\n\n"
+                    last_ping = now
+        finally:
             async with self._lock:
                 if run_id in self._subscribers:
                     self._subscribers[run_id].discard(queue)
