@@ -18,56 +18,102 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
   isAwaitingApproval = false,
   status = 'idle'
 }) => {
+  const isAwaiting = isAwaitingApproval || status === 'awaiting_approval';
   const isCancelled = status === 'cancelled';
-  const isResearching = !isCancelled && (
+  const isDoneAll = status === 'completed' || status === 'budget_exceeded';
+
+  // Planning is only active while formulating the initial plan
+  const isPlanningActive = !isCancelled && !isAwaiting && (
+    (status === 'planning' || status === 'queued' || status === 'pending') &&
+    plannerState !== 'completed'
+  );
+  const isPlanningDone = !isCancelled && (
+    isAwaiting ||
+    plannerState === 'completed' ||
+    status === 'researching' ||
+    status === 'writing' ||
+    isDoneAll
+  );
+
+  // Web research can NEVER be active while waiting for plan approval or while still planning
+  const isResearchActive = !isCancelled && !isAwaiting && !isPlanningActive && (
     status === 'researching' ||
     workers.some(w => w.status === 'active' || w.status === 'revision')
   );
-  const isResearchDone = !isCancelled && (
+  const isResearchDone = !isCancelled && !isAwaiting && !isPlanningActive && (
     (workers.length > 0 && workers.every(w => w.status === 'completed')) ||
     consolidatorState === 'active' ||
     consolidatorState === 'completed' ||
     writerState === 'active' ||
     writerState === 'completed' ||
     status === 'writing' ||
-    status === 'completed' ||
-    status === 'budget_exceeded'
+    isDoneAll
   );
 
   const steps = [
     {
       num: '1',
       title: 'Planning',
-      desc: isAwaitingApproval
+      desc: isAwaiting
         ? 'Plan formulated — awaiting review'
         : isCancelled
         ? 'Planning phase completed'
+        : isPlanningDone
+        ? 'Research strategy formulated'
         : 'Formulating search strategy',
-      state: plannerState,
+      state: isCancelled
+        ? 'cancelled'
+        : isAwaiting
+        ? 'awaiting'
+        : isPlanningActive
+        ? 'active'
+        : isPlanningDone
+        ? 'completed'
+        : 'waiting',
     },
     {
       num: '2',
       title: 'Searching Web',
       desc: isCancelled
         ? 'Cancelled before retrieval'
+        : isAwaiting
+        ? 'Awaiting plan approval'
         : workers.length > 0
         ? `${workers.length} parallel inquiries`
         : isResearchDone
         ? 'Web evidence gathered'
         : 'Gathering web sources',
-      state: isCancelled ? 'cancelled' : isResearching ? 'active' : isResearchDone ? 'completed' : 'waiting',
+      state: isCancelled
+        ? 'cancelled'
+        : isAwaiting
+        ? 'waiting'
+        : isPlanningActive
+        ? 'waiting'
+        : isResearchActive
+        ? 'active'
+        : isResearchDone
+        ? 'completed'
+        : 'waiting',
     },
     {
       num: '3',
       title: 'Verifying Facts',
       desc: isCancelled ? 'Cancelled before verification' : 'Cross-checking source claims',
-      state: isCancelled ? 'cancelled' : consolidatorState,
+      state: isCancelled
+        ? 'cancelled'
+        : isAwaiting || isPlanningActive || (isResearchActive && !isResearchDone)
+        ? 'waiting'
+        : consolidatorState,
     },
     {
       num: '4',
       title: 'Writing Report',
       desc: isCancelled ? 'Cancelled before synthesis' : 'Synthesizing final document',
-      state: isCancelled ? 'cancelled' : writerState,
+      state: isCancelled
+        ? 'cancelled'
+        : isAwaiting || isPlanningActive || !isResearchDone || consolidatorState === 'active'
+        ? 'waiting'
+        : writerState,
     },
   ];
 
@@ -82,7 +128,7 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
           <span className="text-[#8a8c92] text-xs">
             {isCancelled
               ? '⛔ Investigation cancelled by user'
-              : isAwaitingApproval
+              : isAwaiting
               ? '🎯 Plan formulated — review & steering required to proceed'
               : writerState === 'completed'
               ? 'Research complete'
@@ -90,9 +136,9 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
               ? 'Drafting final answer...'
               : consolidatorState === 'active'
               ? 'Cross-referencing sources...'
-              : isResearching
+              : isResearchActive
               ? 'Gathering web evidence...'
-              : plannerState === 'active'
+              : isPlanningActive
               ? 'Analyzing question...'
               : 'Ready for question'}
           </span>
@@ -101,16 +147,16 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
         {/* 4-Step Stepper Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
           {steps.map((step) => {
-            const isStep1Awaiting = isAwaitingApproval && step.num === '1';
+            const isStepAwaiting = step.state === 'awaiting';
             const isStepCancelled = step.state === 'cancelled';
-            const isActive = !isCancelled && (step.state === 'active' || isStep1Awaiting);
-            const isCompleted = !isCancelled && step.state === 'completed' && !isStep1Awaiting;
+            const isActive = step.state === 'active';
+            const isCompleted = step.state === 'completed';
 
             return (
               <div
                 key={step.num}
                 className={`p-3.5 rounded-md border transition-colors ${
-                  isStep1Awaiting
+                  isStepAwaiting
                     ? 'bg-[#171719] border-[#d9a441] border-b-2'
                     : isStepCancelled
                     ? 'bg-[#171719] border-[#1b1a1f] opacity-60'
@@ -125,7 +171,7 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
                   <span className="text-xs text-[#8a8c92] tabular">
                     Step {step.num}
                   </span>
-                  {isStep1Awaiting ? (
+                  {isStepAwaiting ? (
                     <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#d9a441]/20 text-[#d9a441] border border-[#d9a441]/30">
                       <span>Reviewing Plan</span>
                     </span>

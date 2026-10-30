@@ -152,7 +152,7 @@ export function useResearchStream() {
 
         case 'awaiting_plan_approval': {
           setStatus('awaiting_approval');
-          setPlannerState('active');
+          setPlannerState('completed');
           setConsolidatorState('waiting');
           setWriterState('waiting');
           const plan = payload.plan;
@@ -180,7 +180,7 @@ export function useResearchStream() {
         case 'planner_completed':
         case 'plan_created': {
           const isAwaiting = payload.status === 'awaiting_approval';
-          setPlannerState(isAwaiting ? 'active' : 'completed');
+          setPlannerState('completed');
           setConsolidatorState('waiting');
           if (isAwaiting) {
             setStatus('awaiting_approval');
@@ -258,17 +258,21 @@ export function useResearchStream() {
         case 'researching_subquestion':
         case 'finding_extracted': {
           const subqId = payload.sub_question_id;
+          const count = payload.new_findings_count || 1;
           if (subqId) {
-            setSubQuestions(prev => prev.map(w => w.id === subqId ? {
-              ...w,
-              status: 'active',
-              findingsCount: w.findingsCount + 1
-            } : w));
+            setSubQuestions(prev => prev.map((w, idx) => {
+              const matchesId = w.id === subqId || `worker_${idx + 1}` === subqId || `sq_${idx + 1}` === subqId;
+              return matchesId ? {
+                ...w,
+                status: 'active',
+                findingsCount: Math.max(w.findingsCount || 0, count)
+              } : w;
+            }));
           }
-          if (payload.total_findings_count) {
+          if (payload.total_findings_count !== undefined) {
             setFindingsCount(payload.total_findings_count);
           } else {
-            setFindingsCount(prev => prev + 1);
+            setFindingsCount(prev => Math.max(prev, count));
           }
           appendLog('RESEARCHER', `Extracted evidence findings${subqId ? ' (' + subqId + ')' : ''}`, 'researcher');
           break;
@@ -453,13 +457,20 @@ export function useResearchStream() {
           }
         } else if (data.status === 'awaiting_approval') {
           setStatus('awaiting_approval');
-          setPlannerState('active');
+          setPlannerState('completed');
           setConsolidatorState('waiting');
           setWriterState('waiting');
           setJobData(data);
+        } else if (data.status === 'researching') {
+          setStatus('researching');
+          setPlannerState('completed');
+          setJobData(data);
+          if (data.findings_count) setFindingsCount(data.findings_count);
+          if (data.citations_count) setCitationsCount(data.citations_count);
         } else {
           // Reconcile in-progress status
           setStatus(data.status);
+          setJobData(data);
           if (data.findings_count) setFindingsCount(data.findings_count);
           if (data.citations_count) setCitationsCount(data.citations_count);
         }
@@ -706,12 +717,23 @@ export function useResearchStream() {
           const isDone = data.status === 'completed' || data.status === 'budget_exceeded' || data.status === 'writing';
           const isCancelled = data.status === 'cancelled';
           const isAwaiting = data.status === 'awaiting_approval';
-          setSubQuestions(data.plan.sub_questions.map((q, idx) => ({
-            id: q.id || `subq_${idx + 1}`,
-            text: q.question,
-            status: isDone ? 'completed' : isCancelled ? 'waiting' : isAwaiting ? 'waiting' : 'active',
-            findingsCount: 0
-          })));
+          setSubQuestions(prev => {
+            const prevCounts = new Map(prev.map(w => [w.id, w.findingsCount]));
+            return data.plan!.sub_questions.map((q, idx) => {
+              const id = q.id || `subq_${idx + 1}`;
+              let count = prevCounts.get(id) || 0;
+              if (count === 0 && isDone && (data.findings_count || 0) > 0) {
+                const total = data.findings_count || 0;
+                count = Math.max(1, Math.floor(total / data.plan!.sub_questions.length));
+              }
+              return {
+                id,
+                text: q.question,
+                status: isDone ? 'completed' : isCancelled ? 'waiting' : isAwaiting ? 'waiting' : 'active',
+                findingsCount: count
+              };
+            });
+          });
         }
 
         if (data.status === 'completed' || data.status === 'budget_exceeded') {

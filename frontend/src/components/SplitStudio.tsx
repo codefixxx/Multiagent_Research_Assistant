@@ -559,7 +559,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
           {/* Body */}
           <div className="p-6 sm:p-8 flex-1 overflow-y-auto" onClick={handleContainerClick}>
             {!report ? (
-              (jobData?.status === 'awaiting_approval' || status === 'awaiting_approval') ? (
+              (status === 'awaiting_approval' || (jobData?.status === 'awaiting_approval' && status !== 'researching' && status !== 'writing' && status !== 'completed')) ? (
                 <div className="py-2 max-w-3xl mx-auto">
                   <PlanSteeringCard
                     initialPlan={jobData?.plan}
