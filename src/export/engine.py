@@ -49,6 +49,16 @@ EXTENSIONS = {
 }
 
 
+def _sanitize_citation_url(url: str | None) -> str:
+    """Ensure citation URLs strictly use safe http or https schemes."""
+    if not url or not isinstance(url, str):
+        return "#"
+    clean = url.strip()
+    if clean.lower().startswith(("http://", "https://")):
+        return clean
+    return "#"
+
+
 class ReportExportEngine:
     """Orchestrates multi-format report generation and rendering."""
 
@@ -112,7 +122,7 @@ class ReportExportEngine:
                 ]
             )
             for cite in report.citations:
-                target_url = cite.anchor_url or cite.source_url
+                target_url = _sanitize_citation_url(cite.anchor_url or cite.source_url)
                 clean_url = cite.source_url.split("?")[0]
                 if len(clean_url) > 50:
                     clean_url = clean_url[:47] + "..."
@@ -212,7 +222,7 @@ class ReportExportEngine:
                     if cite.verbatim_quote
                     else ""
                 )
-                url = html.escape(cite.anchor_url or cite.source_url)
+                url = html.escape(_sanitize_citation_url(cite.anchor_url or cite.source_url))
                 disp_url = html.escape(cite.source_url.split("?")[0])
                 if len(disp_url) > 60:
                     disp_url = disp_url[:57] + "..."

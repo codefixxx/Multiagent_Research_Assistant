@@ -263,3 +263,18 @@ async def test_api_export_endpoint(
     resp_progress = client.get("/research/run-in-progress/export?format=pdf")
     assert resp_progress.status_code == 400
     assert "does not have a completed report yet" in resp_progress.json()["error"]
+
+
+def test_export_html_neutralizes_javascript_scheme(sample_status_response: ResearchStatusResponse):
+    """Verify that javascript: URIs in citations are replaced with safe fallback in HTML."""
+    sample_status_response.report.citations.append(
+        Citation(
+            citation_id="cite_xss",
+            source_url="javascript:alert(document.domain)",
+            anchor_url="javascript:alert(1)",
+            verified_claim="Malicious payload",
+        )
+    )
+    html_doc = ReportExportEngine.export_html(sample_status_response)
+    assert 'href="javascript:' not in html_doc
+    assert 'href="#"' in html_doc

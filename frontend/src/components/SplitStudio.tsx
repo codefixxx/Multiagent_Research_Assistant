@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { PlanSteeringCard } from './PlanSteeringCard';
 import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { isAutoPurgeOnExport, getSessionId } from '../utils/session';
 import { 
   FileText, 
@@ -87,8 +88,12 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
   const renderedHtml = useMemo(() => {
     if (!report?.markdown_output) return '';
     try {
-      const rawHtml = marked.parse(report.markdown_output) as string;
-      return rawHtml.replace(/\[(cite[_:]?\d+|\d+)\]/gi, (match, citeKey) => {
+      const parsedHtml = marked.parse(report.markdown_output) as string;
+      const sanitizedHtml = DOMPurify.sanitize(parsedHtml, {
+        USE_PROFILES: { html: true },
+        ADD_ATTR: ['target', 'rel'],
+      });
+      return sanitizedHtml.replace(/\[(cite[_:]?\d+|\d+)\]/gi, (match, citeKey) => {
         return `<button type="button" class="citation-tag inline-flex items-center px-1.5 py-0.5 mx-1 rounded text-xs font-medium bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/40 hover:bg-[#4a8ad6]/20 transition-colors cursor-pointer tabular" data-cite="${citeKey}">${match}</button>`;
       });
     } catch {

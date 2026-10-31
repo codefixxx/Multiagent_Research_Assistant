@@ -30,6 +30,16 @@ def test_get_master_encryption_key_deterministic():
     assert key1 == key2
 
 
+def test_get_master_encryption_key_requires_key_in_production(monkeypatch):
+    """Verify that in production environments, omitting QUEUE_ENCRYPTION_KEY raises ValueError."""
+    from src.config import settings
+
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "QUEUE_ENCRYPTION_KEY", None)
+    with pytest.raises(ValueError, match="QUEUE_ENCRYPTION_KEY must be configured in production"):
+        get_master_encryption_key()
+
+
 def test_get_master_encryption_key_formats():
     """Verify key derivation supports 64-character hex, 32-byte base64, and arbitrary strings."""
     # 64-char hex key (32 bytes)

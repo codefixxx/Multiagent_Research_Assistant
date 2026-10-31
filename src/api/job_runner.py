@@ -79,8 +79,21 @@ class ResearchJobService:
         except Exception:
             is_stale = True
 
-        if self.run_manager is None or self.queue is None or force_new or is_stale:
-            client = await get_redis_client(force_fake=force_fake)
+        if (
+            self.run_manager is None
+            or self.queue is None
+            or self.idempotency_cache is None
+            or self.checkpointer is None
+            or force_new
+            or is_stale
+        ):
+            client = (
+                getattr(self.run_manager, "redis", None)
+                if self.run_manager
+                and hasattr(self.run_manager, "redis")
+                and not (force_new or is_stale)
+                else await get_redis_client(force_fake=force_fake)
+            )
             try:
                 self._current_loop = asyncio.get_running_loop()
             except Exception:

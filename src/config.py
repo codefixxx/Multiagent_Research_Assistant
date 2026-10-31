@@ -158,6 +158,16 @@ class Settings(BaseSettings):
         description="When True, strictly forbids falling back to server .env keys. The user MUST supply their own key.",
         validation_alias=AliasChoices("REQUIRE_BYOK", "require_byok"),
     )
+    CORS_ALLOWED_ORIGINS: list[str] = Field(
+        default_factory=lambda: [
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+        ],
+        description="Explicit allowed origins for credentialed CORS.",
+        validation_alias=AliasChoices("CORS_ALLOWED_ORIGINS", "cors_allowed_origins"),
+    )
 
 
 # Global singleton settings instance

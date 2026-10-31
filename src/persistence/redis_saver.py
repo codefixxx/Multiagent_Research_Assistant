@@ -235,9 +235,7 @@ class RedisRunManager:
             await self.redis.zadd(idx_key, {run_id: now_ts})
             if self.default_ttl and self.default_ttl > 0:
                 await self.redis.expire(idx_key, self.default_ttl)
-                await self.redis.zremrangebyscore(
-                    idx_key, "-inf", now_ts - self.default_ttl
-                )
+                await self.redis.zremrangebyscore(idx_key, "-inf", now_ts - self.default_ttl)
         except Exception as e:
             logger.debug(
                 "Failed indexing run in Sorted Set",
@@ -541,7 +539,7 @@ class RedisRunManager:
             try:
                 data = json.loads(raw.decode("utf-8") if isinstance(raw, bytes) else raw)
                 run_session = data.get("session_id")
-                if run_session is not None and session_id is not None and session_id != run_session:
+                if run_session is not None and session_id != run_session:
                     return False
                 if not target_session:
                     target_session = run_session

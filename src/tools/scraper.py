@@ -1,8 +1,11 @@
 """Deep web page scraper with boilerplate extraction and content truncation."""
 
 import asyncio
+import ipaddress
 import re
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from pydantic import BaseModel, Field
@@ -17,6 +20,54 @@ DEFAULT_USER_AGENT = (
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/128.0.0.0 Safari/537.36"
 )
+
+
+def is_safe_scrape_url(url: str) -> tuple[bool, str]:
+    """Validate that a URL uses http/https and does not target internal/private/loopback/metadata endpoints."""
+    if not url or not isinstance(url, str):
+        return False, "Invalid HTTP/HTTPS URL scheme"
+    parsed = urlparse(url.strip())
+    scheme = parsed.scheme.lower()
+    if scheme not in ("http", "https"):
+        return False, "Invalid HTTP/HTTPS URL scheme"
+    hostname = parsed.hostname
+    if not hostname:
+        return False, "Missing hostname in URL"
+
+    host_clean = hostname.lower().strip("[]")
+    if host_clean in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "redis", "api", "worker"):
+        return False, f"Access to internal host '{hostname}' is blocked"
+
+    # Check direct IP
+    try:
+        ip = ipaddress.ip_address(host_clean)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved:
+            return False, f"Access to private/reserved IP '{ip}' is blocked"
+        return True, ""
+    except ValueError:
+        pass
+
+    # Resolve hostname to catch DNS pointing to private ranges
+    try:
+        addr_info = socket.getaddrinfo(host_clean, None)
+        for _, _, _, _, sockaddr in addr_info:
+            ip_candidate = sockaddr[0]
+            ip = ipaddress.ip_address(ip_candidate)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_multicast
+                or ip.is_reserved
+            ):
+                return False, f"Host '{hostname}' resolves to private/reserved IP '{ip}'"
+    except (socket.gaierror, OSError):
+        # Offline or unresolvable in test/isolated environment; allow standard transport handling
+        pass
+    except Exception as exc:
+        logger.debug("Error during SSRF hostname resolution check", host=hostname, error=str(exc))
+
+    return True, ""
 
 
 class ScrapedDocument(BaseModel):
@@ -107,11 +158,14 @@ class DeepPageScraper:
 
     async def scrape_page(self, url: str) -> ScrapedDocument:
         """Fetch a webpage asynchronously, strip boilerplate, and return clean text."""
-        if not url or not (url.startswith("http://") or url.startswith("https://")):
+        safe, reason = is_safe_scrape_url(url)
+        if not safe:
+            is_scheme_err = "scheme" in reason.lower()
             return ScrapedDocument(
                 url=url,
-                status=ExtractionStatus.ERROR,
-                error_message="Invalid HTTP/HTTPS URL scheme",
+                status=ExtractionStatus.ERROR if is_scheme_err else ExtractionStatus.BLOCKED,
+                error_message=reason,
+                tier="tier1_direct",
             )
 
         headers = {
@@ -120,11 +174,24 @@ class DeepPageScraper:
             "Accept-Language": "en-US,en;q=0.9",
         }
 
+        async def _validate_redirect(response: httpx.Response) -> None:
+            if response.is_redirect:
+                location = response.headers.get("Location")
+                if location:
+                    target = str(response.url.join(location))
+                    is_safe, redirect_reason = is_safe_scrape_url(target)
+                    if not is_safe:
+                        raise httpx.RequestError(
+                            f"SSRF redirect blocked: {redirect_reason}",
+                            request=response.request,
+                        )
+
         try:
             async with httpx.AsyncClient(
                 timeout=self.timeout,
                 follow_redirects=True,
                 headers=headers,
+                event_hooks={"response": [_validate_redirect]},
             ) as client:
                 response = await client.get(url)
 

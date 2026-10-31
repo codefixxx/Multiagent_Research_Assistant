@@ -77,7 +77,18 @@ def get_master_encryption_key(explicit_key: str | bytes | None = None) -> bytes:
                 return bytes(candidate)
             return hashlib.sha256(candidate).digest()
 
-    # Fallback deterministic derivation for development/test environments
+    # In production, require an explicit high-entropy encryption key
+    if getattr(settings, "ENVIRONMENT", "").lower() == "production":
+        raise ValueError(
+            "QUEUE_ENCRYPTION_KEY must be configured in production environments. "
+            "Set a 256-bit (32-byte) hex or base64 key in environment variables."
+        )
+
+    # Fallback deterministic derivation for development/test environments only
+    logger.warning(
+        "Using development fallback encryption key. "
+        "Set QUEUE_ENCRYPTION_KEY in production to protect queued secrets."
+    )
     salt = b"multiagent-research-assistant-secure-salt-v1:"
     context = (getattr(settings, "REDIS_URL", None) or "local-fallback").encode("utf-8")
     return hashlib.sha256(salt + context).digest()

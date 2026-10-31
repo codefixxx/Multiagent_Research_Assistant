@@ -160,7 +160,9 @@ async def list_research_history(
     session_id: str | None = Depends(get_session_id),
     service: ResearchJobService = Depends(get_job_service),
 ) -> ResearchHistoryResponse:
-    total, raw_runs = await _fetch_history(service, limit=limit, offset=offset, session_id=session_id)
+    total, raw_runs = await _fetch_history(
+        service, limit=limit, offset=offset, session_id=session_id
+    )
     items = []
     for r in raw_runs:
         items.append(
@@ -317,7 +319,7 @@ async def steer_research_plan(
 ) -> PlanSteerResponse:
     if service.run_manager:
         meta = await service.run_manager.get_run_metadata(run_id)
-        if meta and meta.get("session_id") and meta.get("session_id") != session_id:
+        if meta and meta.get("session_id") is not None and meta.get("session_id") != session_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Research run '{run_id}' not found.",
@@ -354,7 +356,7 @@ async def cancel_research(
 ) -> dict[str, str]:
     if service.run_manager:
         meta = await service.run_manager.get_run_metadata(run_id)
-        if meta and meta.get("session_id") and meta.get("session_id") != session_id:
+        if meta and meta.get("session_id") is not None and meta.get("session_id") != session_id:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Research run '{run_id}' not found.",

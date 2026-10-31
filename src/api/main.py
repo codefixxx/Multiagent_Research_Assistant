@@ -142,10 +142,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     )
 
 
-# Configure CORS
+# Configure CORS with explicit allowed origins
+_cors_origins = list(settings.CORS_ALLOWED_ORIGINS)
+if settings.BASE_URL and settings.BASE_URL not in _cors_origins:
+    _cors_origins.append(settings.BASE_URL.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins,
+    allow_origin_regex=(
+        r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+        if getattr(settings, "ENVIRONMENT", "").lower() != "production"
+        else None
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

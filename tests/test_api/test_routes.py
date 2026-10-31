@@ -341,6 +341,28 @@ async def test_security_headers_present(client):
 
 
 @pytest.mark.asyncio
+async def test_cors_origin_restrictions(client):
+    """Verify that CORS accepts trusted origins and rejects unauthorized third-party origins."""
+    resp_trusted = await client.options(
+        "/research/history",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert resp_trusted.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+    resp_untrusted = await client.options(
+        "/research/history",
+        headers={
+            "Origin": "https://evil.attacker.com",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert resp_untrusted.headers.get("access-control-allow-origin") != "https://evil.attacker.com"
+
+
+@pytest.mark.asyncio
 async def test_ephemeral_session_cross_user_isolation(client):
     """Verify Option A: Ephemeral session headers isolate runs and prevent cross-user visibility."""
     sess_1 = "sess-user-1111"
@@ -402,6 +424,10 @@ async def test_ephemeral_session_cross_user_isolation(client):
     # 6. Cross-user deletion blocked
     cross_del = await client.delete(f"/research/{run1_id}", headers={"X-Session-ID": sess_2})
     assert cross_del.status_code == 404
+
+    # Unauthenticated (missing session header) deletion blocked
+    unauth_del = await client.delete(f"/research/{run1_id}")
+    assert unauth_del.status_code == 404
 
     # 7. Owner deletes their own run (Search and Forget)
     own_del = await client.delete(f"/research/{run1_id}", headers={"X-Session-ID": sess_1})

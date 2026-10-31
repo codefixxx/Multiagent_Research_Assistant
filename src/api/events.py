@@ -115,6 +115,7 @@ class EventBroadcaster:
         for past_event in past_events:
             yield past_event
 
+        seen_events: set[str] = set(past_events)
         terminal_markers = (
             "event: job_completed",
             "event: job_failed",
@@ -123,10 +124,7 @@ class EventBroadcaster:
         )
 
         # Check if the run has already finished
-        if past_events and any(
-            any(tm in pe for tm in terminal_markers)
-            for pe in past_events
-        ):
+        if past_events and any(any(tm in pe for tm in terminal_markers) for pe in past_events):
             async with self._lock:
                 if run_id in self._subscribers:
                     self._subscribers[run_id].discard(queue)
@@ -146,17 +144,20 @@ class EventBroadcaster:
                             stream_cursor += len(new_items)
                             for raw in new_items:
                                 msg = raw.decode("utf-8") if isinstance(raw, bytes) else raw
-                                yield msg
-                                yielded = True
-                                if any(marker in msg for marker in terminal_markers):
-                                    return
+                                if msg not in seen_events:
+                                    seen_events.add(msg)
+                                    yield msg
+                                    yielded = True
+                                    if any(marker in msg for marker in terminal_markers):
+                                        return
                     except Exception as err:
                         logger.debug("Redis stream read error", error=str(err), run_id=run_id)
 
                 # 2. Fetch from local queue (in-process delivery)
                 try:
                     local_msg = await asyncio.wait_for(queue.get(), timeout=0.25)
-                    if self.redis is None:
+                    if local_msg not in seen_events:
+                        seen_events.add(local_msg)
                         yield local_msg
                         yielded = True
                         if any(marker in local_msg for marker in terminal_markers):

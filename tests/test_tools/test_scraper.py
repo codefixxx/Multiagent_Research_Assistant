@@ -198,3 +198,19 @@ async def test_scrape_multiple_concurrent(monkeypatch):
 
     assert len(docs) == 3
     assert all(d.status == ExtractionStatus.SUCCESS for d in docs)
+
+
+@pytest.mark.asyncio
+async def test_scrape_page_ssrf_blocked():
+    """Verify that SSRF targeting localhost, private IPs, or internal services is blocked."""
+    scraper = DeepPageScraper()
+    for bad_url in [
+        "http://127.0.0.1:6379/",
+        "http://localhost:8000/internal",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://10.0.0.1/admin",
+        "http://192.168.1.1/secret",
+    ]:
+        doc = await scraper.scrape_page(bad_url)
+        assert doc.status == ExtractionStatus.BLOCKED
+        assert "blocked" in (doc.error_message or "").lower()
