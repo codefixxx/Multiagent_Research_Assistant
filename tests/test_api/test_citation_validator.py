@@ -197,3 +197,44 @@ def test_citation_validator_preserves_deep_citation_metadata(sample_findings):
     )
     assert sanitized_cite.http_status == 200
     assert sanitized_cite.is_deep_link is True
+
+
+def test_validator_handles_grouped_citations(sample_findings):
+    """Grouped citations like [cite1,cite2] or [cite_1, cite_2] are recognized without orphaning."""
+    report = ResearchReport(
+        title="Grouped Citations Test",
+        executive_summary="Summary with dual citations [cite1,cite2].",
+        sections=[
+            ReportSection(
+                title="Benchmarks",
+                content="Both technologies benchmarked [cite_1, cite_2].",
+                citation_ids=["cite_1", "cite_2"],
+            )
+        ],
+        citations=[
+            Citation(
+                citation_id="cite_1",
+                source_url="https://redis.io/docs/latency",
+                verified_claim="Redis cluster offers sub-millisecond read/write latency.",
+            ),
+            Citation(
+                citation_id="cite_2",
+                source_url="https://postgresql.org/docs/jsonb",
+                verified_claim="PostgreSQL JSONB provides indexing with GIN indexes.",
+            ),
+        ],
+    )
+    report.compile_markdown()
+
+    validator = CitationValidator()
+    # Check extraction handles grouped citations
+    extracted_summary = validator.extract_text_citation_ids(report.executive_summary)
+    assert "cite_1" in extracted_summary
+    assert "cite_2" in extracted_summary
+
+    result = validator.validate(report=report, findings=sample_findings)
+    assert result.is_valid is True
+    assert len(result.orphaned_citations) == 0
+    assert "cite_1" in result.verified_citations
+    assert "cite_2" in result.verified_citations
+

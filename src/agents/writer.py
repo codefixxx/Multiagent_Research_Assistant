@@ -16,13 +16,18 @@ from src.core.llm import extract_token_usage, get_chat_model
 from src.core.logger import logger
 from src.core.telemetry import ExecutionTimer, TokenUsage
 from src.schemas.finding import FindingRecord
-from src.schemas.report import Citation, ResearchReport
+from src.schemas.report import (
+    Citation,
+    ResearchReport,
+    normalize_citation_token,
+    normalize_inline_citations,
+)
 
 WRITER_SYSTEM_PROMPT = """You are a technical report synthesis specialist.
 Your sole responsibility is to synthesize a collection of verified factual findings into a cohesive, publication-ready research report.
 
 STRICT OPERATIONAL RULES:
-1. Every major factual claim or metric must include an inline citation marker, e.g., '[cite_1]', '[cite_2]'.
+1. Every major factual claim or metric must include an inline citation marker, e.g., '[cite_1]', '[cite_2]'. If a claim is supported by multiple sources, cite each source in its own separate bracket, e.g., '[cite_1] [cite_2]' (never group multiple citations together into '[cite_1, cite_2]' or '[cite1,cite2]').
 2. Only make claims that are explicitly supported by the provided Finding Records. Do not invent citations or facts.
 3. Every citation referenced in the text must be listed in the `citations` array with its exact source URL and verified claim.
 4. Structure the report logically with a concise executive summary and thematic technical sections.
@@ -184,10 +189,29 @@ async def write_report(
         )
 
     # --- DETERMINISTIC CITATION RECONCILIATION & BINDING ---
+    # Normalize inline citations in executive summary and all section contents
+    if report.executive_summary:
+        report.executive_summary = normalize_inline_citations(report.executive_summary)
+    for sec in report.sections:
+        if sec.content:
+            sec.content = normalize_inline_citations(sec.content)
+
     citation_id_map: dict[str, FindingRecord] = {}
     for i, finding in enumerate(findings, start=1):
         cid = f"cite_{i}"
         citation_id_map[cid] = finding
+
+    # Also normalize any citation IDs inside section.citation_ids
+    for sec in report.sections:
+        normalized_sec_ids: list[str] = []
+        for raw_id in sec.citation_ids:
+            cleaned_id = raw_id.strip().strip("[]").strip()
+            parts = [p.strip() for p in re.split(r"[,;]+", cleaned_id) if p.strip()]
+            for p in parts:
+                token = normalize_citation_token(p)
+                if token:
+                    normalized_sec_ids.append(token)
+        sec.citation_ids = [f"[{tid}]" for tid in normalized_sec_ids]
 
     # Scan report text for all referenced citation tokens
     cite_matches = re.findall(r"\[(cite_?\d+|\d+)\]", report.executive_summary or "", re.IGNORECASE)
@@ -200,13 +224,9 @@ async def write_report(
     seen_cids: set[str] = set()
     for raw in cite_matches:
         cleaned = raw.strip("[]").strip()
-        if cleaned.isdigit():
-            norm = f"cite_{cleaned}"
-        elif not cleaned.lower().startswith("cite_"):
-            norm = f"cite_{cleaned.lower().replace('cite', '')}"
-        else:
-            norm = cleaned.lower()
-
+        norm = normalize_citation_token(cleaned) or (
+            f"cite_{cleaned}" if cleaned.isdigit() else cleaned.lower()
+        )
         if norm not in seen_cids:
             seen_cids.add(norm)
             normalized_referenced.append(norm)
@@ -217,7 +237,9 @@ async def write_report(
     # Pass 1: Keep citations already declared by LLM if they map to valid ground-truth findings
     for c in report.citations or []:
         cleaned_cid = c.citation_id.strip("[]").strip()
-        norm_cid = f"cite_{cleaned_cid}" if cleaned_cid.isdigit() else cleaned_cid.lower()
+        norm_cid = normalize_citation_token(cleaned_cid) or (
+            f"cite_{cleaned_cid}" if cleaned_cid.isdigit() else cleaned_cid.lower()
+        )
         if norm_cid in citation_id_map and norm_cid not in bound_cid_set:
             matched_finding = citation_id_map[norm_cid]
             compiled_citations.append(
@@ -265,9 +287,12 @@ async def write_report(
         valid_sec_cids = []
         for sm in sec_matches:
             cleaned = sm.strip("[]").strip()
-            norm = f"cite_{cleaned}" if cleaned.isdigit() else cleaned.lower()
+            norm = normalize_citation_token(cleaned) or (
+                f"cite_{cleaned}" if cleaned.isdigit() else cleaned.lower()
+            )
             if norm in bound_cid_set and f"[{norm}]" not in valid_sec_cids:
                 valid_sec_cids.append(f"[{norm}]")
+        sec.citation_ids = valid_sec_cids
         sec.citation_ids = valid_sec_cids
 
     # Compile the full markdown text representation with active deep anchors

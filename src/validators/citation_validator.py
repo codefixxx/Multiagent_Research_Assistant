@@ -99,13 +99,15 @@ class CitationValidator:
         """Extract all citation identifier tokens referenced inline within markdown text."""
         if not text:
             return set()
-        matches = self.INLINE_CITATION_REGEX.findall(text)
         found: set[str] = set()
-        for m in matches:
-            norm = _normalize_citation_id(m)
-            # Filter out non-citation brackets like [TOC], [X], markdown links
-            if norm.lower().startswith("cite") or norm.isdigit():
-                found.add(norm)
+        for m in re.finditer(r"(?<!\!)\[([a-zA-Z0-9_:\s,;-]+)\](?!\()", text):
+            inner = m.group(1).strip()
+            parts = [p.strip() for p in re.split(r"[,;]+", inner) if p.strip()]
+            for p in parts:
+                norm = _normalize_citation_id(p)
+                # Filter out non-citation brackets like [TOC], [X], markdown links
+                if norm.lower().startswith("cite") or norm.isdigit():
+                    found.add(norm)
         return found
 
     def validate(

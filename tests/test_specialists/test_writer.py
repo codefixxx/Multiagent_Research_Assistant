@@ -4,7 +4,13 @@ import pytest
 
 from src.agents.writer import format_findings_for_writer, write_report
 from src.schemas.finding import FindingRecord
-from src.schemas.report import ResearchReport
+from src.schemas.report import (
+    Citation,
+    ReportSection,
+    ResearchReport,
+    normalize_citation_token,
+    normalize_inline_citations,
+)
 
 
 @pytest.mark.asyncio
@@ -64,3 +70,70 @@ def test_format_findings_for_writer():
     assert "[cite_1]" in formatted
     assert "https://test.com" in formatted
     assert "Claim 1" in formatted
+
+
+def test_normalize_citation_token():
+    assert normalize_citation_token("cite1") == "cite_1"
+    assert normalize_citation_token("cite_1") == "cite_1"
+    assert normalize_citation_token("cite:1") == "cite_1"
+    assert normalize_citation_token("1") == "cite_1"
+    assert normalize_citation_token("cite_test") == "cite_test"
+    assert normalize_citation_token("Note") is None
+    assert normalize_citation_token("") is None
+
+
+def test_normalize_inline_citations_grouped():
+    # Grouped citations like [cite1,cite2] must be split into [cite_1] [cite_2]
+    text1 = "Quantum algorithms achieve speedup [cite1,cite2] in simulations."
+    assert normalize_inline_citations(text1) == "Quantum algorithms achieve speedup [cite_1] [cite_2] in simulations."
+
+    # Grouped citations with spaces and underscores: [cite_1, cite_2]
+    text2 = "Key metrics [cite_1, cite_2] indicate lower latency."
+    assert normalize_inline_citations(text2) == "Key metrics [cite_1] [cite_2] indicate lower latency."
+
+    # Numeric group: [1, 2]
+    text3 = "Claims [1, 2] substantiated."
+    assert normalize_inline_citations(text3) == "Claims [cite_1] [cite_2] substantiated."
+
+    # Semicolon separated
+    text4 = "Dual sources [cite1; cite2]."
+    assert normalize_inline_citations(text4) == "Dual sources [cite_1] [cite_2]."
+
+    # Markdown links and images must remain intact
+    text5 = "See [official docs](https://example.com) and ![diagram](https://example.com/d.png)."
+    assert normalize_inline_citations(text5) == text5
+
+    # Non-citation brackets like [Important Note] must remain intact
+    text6 = "[Important Note] Do not modify this."
+    assert normalize_inline_citations(text6) == text6
+
+
+def test_report_compile_markdown_normalizes_grouped_citations():
+    report = ResearchReport(
+        title="Distributed Systems",
+        executive_summary="Summary with multiple citations [cite1,cite2].",
+        sections=[
+            ReportSection(
+                title="Performance",
+                content="Throughput increases [cite_1, cite_2] significantly.",
+                citation_ids=["cite_1", "cite_2"],
+            )
+        ],
+        citations=[
+            Citation(
+                citation_id="[cite_1]",
+                source_url="https://example.com/1",
+                verified_claim="Claim 1",
+            ),
+            Citation(
+                citation_id="[cite_2]",
+                source_url="https://example.com/2",
+                verified_claim="Claim 2",
+            ),
+        ],
+    )
+    md = report.compile_markdown()
+    assert "[cite_1] [cite_2]" in report.executive_summary
+    assert "[cite_1] [cite_2]" in report.sections[0].content
+    assert "[cite_1] [cite_2]" in md
+

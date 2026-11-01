@@ -1,6 +1,58 @@
 """Pydantic schemas for the Writer Specialist and verified report output."""
 
+import re
+
 from pydantic import BaseModel, Field
+
+
+def normalize_citation_token(token: str) -> str | None:
+    """Normalize a single citation token like 'cite1', 'cite_1', '1', 'cite:1' to 'cite_1'.
+
+    Returns normalized token without brackets (e.g. 'cite_1') if valid, else None.
+    """
+    cleaned = token.strip().strip("[]").strip()
+    if not cleaned:
+        return None
+    if cleaned.isdigit():
+        return f"cite_{cleaned}"
+    m = re.match(r"^cite[_:]?(\d+)$", cleaned, re.IGNORECASE)
+    if m:
+        return f"cite_{m.group(1)}"
+    if cleaned.lower().startswith("cite"):
+        return cleaned.lower()
+    return None
+
+
+def normalize_inline_citations(text: str) -> str:
+    """Normalize all inline citations in text into standard separate bracketed citations.
+
+    Converts grouped or non-standard citations:
+        '[cite1,cite2]' -> '[cite_1] [cite_2]'
+        '[cite_1, cite_2]' -> '[cite_1] [cite_2]'
+        '[1, 2]' -> '[cite_1] [cite_2]'
+        '[cite1]' -> '[cite_1]'
+    while leaving non-citation brackets like '[Note]' or markdown links intact.
+    """
+    if not text:
+        return ""
+
+    def _replace_group(match: re.Match) -> str:
+        inner = match.group(1).strip()
+        parts = [p.strip() for p in re.split(r"[,;]+", inner) if p.strip()]
+        if not parts:
+            return match.group(0)
+
+        norm_tokens: list[str] = []
+        for p in parts:
+            norm = normalize_citation_token(p)
+            if norm is None:
+                return match.group(0)
+            norm_tokens.append(f"[{norm}]")
+
+        return " ".join(norm_tokens)
+
+    # Match brackets not preceded by '!' and not followed by '('
+    return re.sub(r"(?<!\!)\[([a-zA-Z0-9_:\s,;-]+)\](?!\()", _replace_group, text)
 
 
 class Citation(BaseModel):
@@ -63,6 +115,12 @@ class ResearchReport(BaseModel):
 
     def compile_markdown(self) -> str:
         """Helper to generate clean Markdown text from structured report fields."""
+        if self.executive_summary:
+            self.executive_summary = normalize_inline_citations(self.executive_summary)
+        for sec in self.sections:
+            if sec.content:
+                sec.content = normalize_inline_citations(sec.content)
+
         md_lines = [
             f"# {self.title}\n",
             "## Executive Summary",

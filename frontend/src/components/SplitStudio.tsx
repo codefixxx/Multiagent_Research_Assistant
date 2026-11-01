@@ -70,14 +70,26 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     const map = new Map<string, Citation>();
     if (report?.citations) {
       report.citations.forEach(c => {
-        const cleanKey = c.citation_id.replace(/[[\]]/g, '');
+        const rawKey = c.citation_id;
+        const cleanKey = rawKey.replace(/[[\]]/g, '').trim();
+        const lowerKey = cleanKey.toLowerCase();
+
+        map.set(rawKey, c);
+        map.set(rawKey.toLowerCase(), c);
         map.set(cleanKey, c);
-        map.set(c.citation_id, c);
-        const numOnly = cleanKey.replace(/^cite_?/, '');
-        if (numOnly) {
-          map.set(numOnly, c);
-          map.set(`cite_${numOnly}`, c);
-          map.set(`cite:${numOnly}`, c);
+        map.set(lowerKey, c);
+
+        const numMatch = lowerKey.match(/\d+/);
+        if (numMatch) {
+          const num = numMatch[0];
+          map.set(num, c);
+          map.set(`cite_${num}`, c);
+          map.set(`cite${num}`, c);
+          map.set(`cite:${num}`, c);
+          map.set(`[cite_${num}]`, c);
+          map.set(`[cite${num}]`, c);
+          map.set(`[cite:${num}]`, c);
+          map.set(`[${num}]`, c);
         }
       });
     }
@@ -93,8 +105,25 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
         USE_PROFILES: { html: true },
         ADD_ATTR: ['target', 'rel'],
       });
-      return sanitizedHtml.replace(/\[(cite[_:]?\d+|\d+)\]/gi, (match, citeKey) => {
-        return `<button type="button" class="citation-tag inline-flex items-center px-1.5 py-0.5 mx-1 rounded text-xs font-medium bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/40 hover:bg-[#4a8ad6]/20 transition-colors cursor-pointer tabular" data-cite="${citeKey}">${match}</button>`;
+
+      const isCitationToken = (token: string): boolean => {
+        const t = token.trim();
+        return /^(?:cite[_:-]?[a-zA-Z0-9]+|\d+)$/i.test(t);
+      };
+
+      // Match single or multiple comma/semicolon-separated citations in brackets: [cite1,cite2], [cite_1, cite_2], [1, 2], [cite_1], etc.
+      // Negative lookahead (?!\() ensures markdown links like [text](url) are never corrupted.
+      return sanitizedHtml.replace(/\[([a-zA-Z0-9_:\s,;-]+)\](?!\()/g, (match, inner) => {
+        const parts = inner.split(/[,;]+/).map((t: string) => t.trim()).filter(Boolean);
+        if (parts.length === 0 || !parts.every(isCitationToken)) {
+          return match;
+        }
+
+        return parts.map((citeKey: string) => {
+          const cleanKey = citeKey.replace(/[[\]]/g, '').trim();
+          const displayKey = cleanKey.startsWith('[') ? cleanKey : `[${cleanKey}]`;
+          return `<button type="button" class="citation-tag inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded text-xs font-medium bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/40 hover:bg-[#4a8ad6]/20 transition-colors cursor-pointer tabular" data-cite="${cleanKey}">${displayKey}</button>`;
+        }).join('');
       });
     } catch {
       return report.markdown_output;
@@ -209,15 +238,23 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     const target = e.target as HTMLElement;
     const btn = target.closest('button.citation-tag');
     if (btn) {
-      const citeKey = btn.getAttribute('data-cite') || '';
-      const cleanKey = citeKey.replace(/[[\]]/g, '');
-      if (citationMap.has(cleanKey)) {
-        onSelectCitation(citationMap.get(cleanKey)!);
-      } else if (citationMap.has(citeKey)) {
-        onSelectCitation(citationMap.get(citeKey)!);
+      const citeKey = (btn.getAttribute('data-cite') || '').trim();
+      const cleanKey = citeKey.replace(/[[\]]/g, '').trim().toLowerCase();
+      const numMatch = cleanKey.match(/\d+/);
+      const numOnly = numMatch ? numMatch[0] : '';
+
+      const matched = citationMap.get(cleanKey)
+        || citationMap.get(citeKey)
+        || (numOnly ? citationMap.get(`cite_${numOnly}`) : undefined)
+        || (numOnly ? citationMap.get(`cite${numOnly}`) : undefined)
+        || (numOnly ? citationMap.get(numOnly) : undefined)
+        || (numOnly ? citationMap.get(`cite:${numOnly}`) : undefined);
+
+      if (matched) {
+        onSelectCitation(matched);
       } else if (citeKey) {
         onSelectCitation({
-          citation_id: citeKey,
+          citation_id: citeKey.startsWith('[') ? citeKey : `[${citeKey}]`,
           source_url: '#',
           verified_claim: 'Source reference confirmed during research synthesis.'
         });
