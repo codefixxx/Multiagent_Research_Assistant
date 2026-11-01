@@ -1,13 +1,3 @@
----
-title: Multiagent Research Assistant
-emoji: 🔬
-colorFrom: indigo
-colorTo: blue
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # Autonomous Multi-Agent Research Assistant
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)

@@ -30,25 +30,22 @@ COPY src/ ./src/
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 RUN uv pip install --system --no-cache .
 
-# Runtime Stage: Lean Production Image with Playwright Chromium & Redis Support
+# Runtime Stage: Lean Production Image with Playwright Chromium Support
 FROM python:3.12-slim AS runner
 
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PORT=7860 \
-    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
-    HOME=/home/appuser \
-    PATH=/home/appuser/.local/bin:$PATH
+    PORT=8000 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# Security: Create non-root unprivileged service user (UID 1000 required by Hugging Face Spaces)
-RUN useradd -m -u 1000 appuser
+# Security: Create non-root unprivileged service user
+RUN groupadd -r appgroup && useradd -r -g appgroup -d /app -s /sbin/nologin appuser
 
-# Install runtime utilities (curl for healthcheck, redis-server for local state caching)
+# Install runtime utilities (curl for container healthcheck)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
-    redis-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed site-packages and binaries from builder stage
@@ -58,23 +55,19 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 # Install Playwright Chromium and required OS dependencies for headless scraping
 RUN mkdir -p /ms-playwright && \
     playwright install --with-deps chromium && \
-    chmod -R 777 /ms-playwright
+    chown -R appuser:appgroup /ms-playwright
 
-# Copy application code with proper user ownership
-COPY --chown=appuser:appuser src/ /app/src/
-COPY --chown=appuser:appuser scripts/ /app/scripts/
-COPY --chown=appuser:appuser frontend/public/ /app/frontend/public/
-COPY --chown=appuser:appuser --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
-COPY --chown=appuser:appuser pyproject.toml README.md /app/
-
-# Ensure entrypoint script is executable and user owns app/tmp directories
-RUN chmod +x /app/scripts/entrypoint.sh && chown -R appuser:appuser /app /tmp
+# Copy application code with proper ownership
+COPY --chown=appuser:appgroup src/ /app/src/
+COPY --chown=appuser:appgroup frontend/public/ /app/frontend/public/
+COPY --chown=appuser:appgroup --from=frontend-builder /app/frontend/dist/ /app/frontend/dist/
+COPY --chown=appuser:appgroup pyproject.toml README.md /app/
 
 USER appuser
 
-EXPOSE 7860
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:${PORT:-7860}/health || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
-ENTRYPOINT ["/app/scripts/entrypoint.sh"]
+CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
