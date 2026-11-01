@@ -36,7 +36,9 @@ def get_shared_fake_redis() -> Any:
     if _shared_fake_redis is not None:
         pool = getattr(_shared_fake_redis, "connection_pool", None)
         pool_loop = getattr(pool, "_loop", None) if pool else None
-        if pool_loop is not None and (pool_loop.is_closed() or (curr_loop and pool_loop is not curr_loop)):
+        if pool_loop is not None and (
+            pool_loop.is_closed() or (curr_loop and pool_loop is not curr_loop)
+        ):
             _shared_fake_redis = None
 
     if _shared_fake_redis is None:
@@ -65,7 +67,9 @@ async def get_redis_client(
         pool_loop = getattr(pool, "_loop", None) if pool else None
         client_loop = getattr(_cached_redis_client, "_loop", None)
         target_loop = client_loop or pool_loop
-        if target_loop is not None and (target_loop.is_closed() or (curr_loop and target_loop is not curr_loop)):
+        if target_loop is not None and (
+            target_loop.is_closed() or (curr_loop and target_loop is not curr_loop)
+        ):
             _cached_redis_client = None
         else:
             return _cached_redis_client

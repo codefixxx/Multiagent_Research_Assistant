@@ -96,9 +96,7 @@ class ResearchJobService:
                 and not (force_new or is_stale)
                 else (
                     getattr(self.queue, "redis", None)
-                    if self.queue
-                    and hasattr(self.queue, "redis")
-                    and not (force_new or is_stale)
+                    if self.queue and hasattr(self.queue, "redis") and not (force_new or is_stale)
                     else await get_redis_client(force_fake=force_fake)
                 )
             )
@@ -143,7 +141,11 @@ class ResearchJobService:
         # Safety fallback: If running on in-memory FakeRedis, external workers cannot connect.
         # Fallback to embedded execution so single-server instances always execute jobs.
         # In test environments, preserve decoupled mode if explicitly requested by test harness.
-        if effective_mode == "decoupled" and "pytest" not in sys.modules and not os.environ.get("PYTEST_CURRENT_TEST"):
+        if (
+            effective_mode == "decoupled"
+            and "pytest" not in sys.modules
+            and not os.environ.get("PYTEST_CURRENT_TEST")
+        ):
             is_fake = False
             if self.run_manager and getattr(self.run_manager, "redis", None):
                 redis_type = type(self.run_manager.redis).__name__.lower()
