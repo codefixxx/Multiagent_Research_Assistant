@@ -10,6 +10,7 @@ import type {
 import { PlanSteeringCard } from './PlanSteeringCard';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import katex from 'katex';
 import { isAutoPurgeOnExport, getSessionId } from '../utils/session';
 import { 
   FileText, 
@@ -96,24 +97,65 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
     return map;
   }, [report]);
 
-  // Render markdown with clickable source tags
+  // Render markdown with math support (KaTeX) and clickable source tags
   const renderedHtml = useMemo(() => {
     if (!report?.markdown_output) return '';
     try {
-      const parsedHtml = marked.parse(report.markdown_output) as string;
-      const sanitizedHtml = DOMPurify.sanitize(parsedHtml, {
-        USE_PROFILES: { html: true },
-        ADD_ATTR: ['target', 'rel'],
+      const rawMarkdown = report.markdown_output;
+
+      // 1. Protect code blocks and inline code from math extraction
+      const codeBlocks: string[] = [];
+      let protectedText = rawMarkdown.replace(/(```[\s\S]*?```|`[^`\n]+`)/g, (match) => {
+        const id = `@@CODE_TOKEN_${codeBlocks.length}@@`;
+        codeBlocks.push(match);
+        return id;
       });
 
+      // 2. Extract display/block math: $$...$$ or \[...\]
+      const mathBlocks: string[] = [];
+      protectedText = protectedText.replace(/(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\])/g, (match) => {
+        let raw = match;
+        if (raw.startsWith('$$') && raw.endsWith('$$')) {
+          raw = raw.slice(2, -2).trim();
+        } else if (raw.startsWith('\\[') && raw.endsWith('\\]')) {
+          raw = raw.slice(2, -2).trim();
+        }
+        const id = `@@MATH_BLOCK_${mathBlocks.length}@@`;
+        mathBlocks.push(raw);
+        return `\n\n${id}\n\n`;
+      });
+
+      // 3. Extract inline math: \(...\) or $...$
+      const inlineMath: string[] = [];
+      protectedText = protectedText.replace(/\\\(([\s\S]+?)\\\)/g, (_match, raw) => {
+        const id = `@@MATH_INLINE_${inlineMath.length}@@`;
+        inlineMath.push(raw.trim());
+        return id;
+      });
+
+      protectedText = protectedText.replace(/(?<!\$)\$(?!\$)([^$\n\r]+?)(?<![\s$])\$(?!\$)/g, (match, raw) => {
+        // Exclude common prices like $100, $50.99, $10 million, etc.
+        if (/^\d+(?:\.\d+)?(?:\s*(?:USD|EUR|GBP|million|billion|k))?$/i.test(raw.trim())) {
+          return match;
+        }
+        const id = `@@MATH_INLINE_${inlineMath.length}@@`;
+        inlineMath.push(raw.trim());
+        return id;
+      });
+
+      // 4. Restore code blocks before marked parsing
+      const preprocessedMarkdown = protectedText.replace(/@@CODE_TOKEN_(\d+)@@/g, (_, idx) => codeBlocks[Number(idx)]);
+
+      // 5. Parse markdown into HTML
+      let parsedHtml = marked.parse(preprocessedMarkdown) as string;
+
+      // 6. Replace citations with clickable buttons
       const isCitationToken = (token: string): boolean => {
         const t = token.trim();
         return /^(?:cite[_:-]?[a-zA-Z0-9]+|\d+)$/i.test(t);
       };
 
-      // Match single or multiple comma/semicolon-separated citations in brackets: [cite1,cite2], [cite_1, cite_2], [1, 2], [cite_1], etc.
-      // Negative lookahead (?!\() ensures markdown links like [text](url) are never corrupted.
-      return sanitizedHtml.replace(/\[([a-zA-Z0-9_:\s,;-]+)\](?!\()/g, (match, inner) => {
+      parsedHtml = parsedHtml.replace(/\[([a-zA-Z0-9_:\s,;-]+)\](?!\()/g, (match, inner) => {
         const parts = inner.split(/[,;]+/).map((t: string) => t.trim()).filter(Boolean);
         if (parts.length === 0 || !parts.every(isCitationToken)) {
           return match;
@@ -124,6 +166,33 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
           const displayKey = cleanKey.startsWith('[') ? cleanKey : `[${cleanKey}]`;
           return `<button type="button" class="citation-tag inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded text-xs font-medium bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/40 hover:bg-[#4a8ad6]/20 transition-colors cursor-pointer tabular" data-cite="${cleanKey}">${displayKey}</button>`;
         }).join('');
+      });
+
+      // 7. Render math placeholders to KaTeX HTML
+      parsedHtml = parsedHtml.replace(/<p>\s*(@@MATH_BLOCK_\d+@@)\s*<\/p>/g, '$1');
+      parsedHtml = parsedHtml.replace(/@@MATH_BLOCK_(\d+)@@/g, (_, idx) => {
+        const expr = mathBlocks[Number(idx)];
+        try {
+          return `<div class="katex-display my-3 overflow-x-auto text-center">${katex.renderToString(expr, { displayMode: true, throwOnError: false })}</div>`;
+        } catch {
+          return `$$${expr}$$`;
+        }
+      });
+
+      parsedHtml = parsedHtml.replace(/@@MATH_INLINE_(\d+)@@/g, (_, idx) => {
+        const expr = inlineMath[Number(idx)];
+        try {
+          return katex.renderToString(expr, { displayMode: false, throwOnError: false });
+        } catch {
+          return `$${expr}$`;
+        }
+      });
+
+      // 8. Sanitize HTML allowing mathMl and svg
+      return DOMPurify.sanitize(parsedHtml, {
+        USE_PROFILES: { html: true, mathMl: true, svg: true },
+        ADD_TAGS: ['semantics', 'annotation', 'annotation-xml'],
+        ADD_ATTR: ['target', 'rel', 'display', 'mathvariant', 'xmlns', 'encoding'],
       });
     } catch {
       return report.markdown_output;

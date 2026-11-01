@@ -144,3 +144,19 @@
   padding: 0.5rem 0.75rem;
   border-bottom: 1px solid var(--rule);
 }
+
+/* KaTeX Math Styling */
+.prose-dossier .katex {
+  font-size: 1.05em;
+  color: #f1f5f9;
+}
+
+.prose-dossier .katex-display {
+  margin: 1.25rem 0;
+  padding: 0.75rem 1rem;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+}

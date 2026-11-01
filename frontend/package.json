@@ -12,7 +12,9 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@types/dompurify": "^3.0.5",
+    "@types/katex": "^0.16.8",
     "dompurify": "^3.4.17",
+    "katex": "^0.19.1",
     "lucide-react": "^1.59.0",
     "marked": "^18.1.1",
     "react": "^19.3.1",

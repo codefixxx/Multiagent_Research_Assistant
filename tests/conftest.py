@@ -17,10 +17,11 @@ from src.schemas.review import ReviewEvaluation
 
 @pytest.fixture(autouse=True)
 def set_default_test_worker_mode(monkeypatch):
-    """Default unit and integration tests to embedded mode so they don't require external daemons."""
+    """Default unit and integration tests to embedded mode and non-BYOK mode so they don't depend on local .env."""
     from src.config import settings
 
     monkeypatch.setattr(settings, "WORKER_MODE", "embedded")
+    monkeypatch.setattr(settings, "REQUIRE_BYOK", False)
 
 
 class MockChatModel(BaseChatModel):
