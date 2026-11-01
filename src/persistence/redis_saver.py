@@ -15,6 +15,7 @@ from src.core.logger import logger
 
 # Module-level singleton fake redis client for in-memory session persistence
 _shared_fake_redis: Any = None
+_cached_redis_client: Any = None
 
 
 def get_shared_fake_redis() -> Any:
@@ -38,17 +39,25 @@ async def get_redis_client(
     to an in-memory FakeRedis client so local development and testing
     never fail due to missing external infrastructure.
     """
+    global _cached_redis_client
+    if not force_fake and redis_url is None and _cached_redis_client is not None:
+        return _cached_redis_client
+
     if force_fake:
         logger.debug("Using in-memory FakeRedis client (force_fake=True)")
         return get_shared_fake_redis()
 
-    url = redis_url or settings.REDIS_URL
+    url = (redis_url or settings.REDIS_URL or "").strip()
+    if not url or url.lower() in ("fake", "memory", "none", "embedded"):
+        _cached_redis_client = get_shared_fake_redis()
+        return _cached_redis_client
+
     try:
         client = aioredis.from_url(url, decode_responses=False)
-        # Verify connection with quick ping
         pong = await asyncio.wait_for(client.ping(), timeout=timeout)
         if pong:
             logger.info("Successfully connected to Redis", url=url)
+            _cached_redis_client = client
             return client
     except Exception as e:
         logger.warning(
@@ -57,7 +66,8 @@ async def get_redis_client(
             error=str(e),
         )
 
-    return get_shared_fake_redis()
+    _cached_redis_client = get_shared_fake_redis()
+    return _cached_redis_client
 
 
 class PipelineProxy:
