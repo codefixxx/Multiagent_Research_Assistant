@@ -298,6 +298,7 @@ async def test_api_export_endpoint(
 
 def test_export_html_neutralizes_javascript_scheme(sample_status_response: ResearchStatusResponse):
     """Verify that javascript: URIs in citations are replaced with safe fallback in HTML."""
+    assert sample_status_response.report is not None
     sample_status_response.report.citations.append(
         Citation(
             citation_id="cite_xss",
