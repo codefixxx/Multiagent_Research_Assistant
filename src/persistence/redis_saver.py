@@ -13,18 +13,34 @@ from langgraph.checkpoint.redis.ashallow import AsyncShallowRedisSaver
 from src.config import settings
 from src.core.logger import logger
 
-# Module-level singleton fake redis client for in-memory session persistence
+# Module-level singleton fake redis server and clients for in-memory session persistence
+_shared_fake_server: Any = None
 _shared_fake_redis: Any = None
 _cached_redis_client: Any = None
 
 
 def get_shared_fake_redis() -> Any:
     """Return a shared FakeRedis instance preserving checkpoints across graph reloads."""
-    global _shared_fake_redis
-    if _shared_fake_redis is None:
-        import fakeredis.aioredis
+    global _shared_fake_server, _shared_fake_redis
+    import fakeredis
+    import fakeredis.aioredis
 
-        _shared_fake_redis = fakeredis.aioredis.FakeRedis()
+    if _shared_fake_server is None:
+        _shared_fake_server = fakeredis.FakeServer()
+
+    try:
+        curr_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        curr_loop = None
+
+    if _shared_fake_redis is not None:
+        pool = getattr(_shared_fake_redis, "connection_pool", None)
+        pool_loop = getattr(pool, "_loop", None) if pool else None
+        if pool_loop is not None and (pool_loop.is_closed() or (curr_loop and pool_loop is not curr_loop)):
+            _shared_fake_redis = None
+
+    if _shared_fake_redis is None:
+        _shared_fake_redis = fakeredis.aioredis.FakeRedis(server=_shared_fake_server)
     return _shared_fake_redis
 
 
@@ -41,7 +57,18 @@ async def get_redis_client(
     """
     global _cached_redis_client
     if not force_fake and redis_url is None and _cached_redis_client is not None:
-        return _cached_redis_client
+        try:
+            curr_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            curr_loop = None
+        pool = getattr(_cached_redis_client, "connection_pool", None)
+        pool_loop = getattr(pool, "_loop", None) if pool else None
+        client_loop = getattr(_cached_redis_client, "_loop", None)
+        target_loop = client_loop or pool_loop
+        if target_loop is not None and (target_loop.is_closed() or (curr_loop and target_loop is not curr_loop)):
+            _cached_redis_client = None
+        else:
+            return _cached_redis_client
 
     if force_fake:
         logger.debug("Using in-memory FakeRedis client (force_fake=True)")

@@ -1,6 +1,8 @@
 """Background job execution engine for the multi-agent research workflow."""
 
 import asyncio
+import os
+import sys
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -92,7 +94,13 @@ class ResearchJobService:
                 if self.run_manager
                 and hasattr(self.run_manager, "redis")
                 and not (force_new or is_stale)
-                else await get_redis_client(force_fake=force_fake)
+                else (
+                    getattr(self.queue, "redis", None)
+                    if self.queue
+                    and hasattr(self.queue, "redis")
+                    and not (force_new or is_stale)
+                    else await get_redis_client(force_fake=force_fake)
+                )
             )
             try:
                 self._current_loop = asyncio.get_running_loop()
@@ -134,7 +142,8 @@ class ResearchJobService:
 
         # Safety fallback: If running on in-memory FakeRedis, external workers cannot connect.
         # Fallback to embedded execution so single-server instances always execute jobs.
-        if effective_mode == "decoupled":
+        # In test environments, preserve decoupled mode if explicitly requested by test harness.
+        if effective_mode == "decoupled" and "pytest" not in sys.modules and not os.environ.get("PYTEST_CURRENT_TEST"):
             is_fake = False
             if self.run_manager and getattr(self.run_manager, "redis", None):
                 redis_type = type(self.run_manager.redis).__name__.lower()

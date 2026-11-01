@@ -17,11 +17,15 @@ from src.schemas.review import ReviewEvaluation
 
 @pytest.fixture(autouse=True)
 def set_default_test_worker_mode(monkeypatch):
-    """Default unit and integration tests to embedded mode and non-BYOK mode so they don't depend on local .env."""
+    """Default unit and integration tests to embedded mode, non-BYOK mode, and isolated in-memory Redis."""
+    import src.persistence.redis_saver as rs
     from src.config import settings
 
     monkeypatch.setattr(settings, "WORKER_MODE", "embedded")
     monkeypatch.setattr(settings, "REQUIRE_BYOK", False)
+    monkeypatch.setattr(settings, "REDIS_URL", "embedded")
+    rs._cached_redis_client = None
+    rs._shared_fake_redis = None
 
 
 class MockChatModel(BaseChatModel):
