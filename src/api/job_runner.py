@@ -132,6 +132,21 @@ class ResearchJobService:
 
         effective_mode = mode or settings.WORKER_MODE
 
+        # Safety fallback: If running on in-memory FakeRedis, external workers cannot connect.
+        # Fallback to embedded execution so single-server instances always execute jobs.
+        if effective_mode == "decoupled":
+            is_fake = False
+            if self.run_manager and getattr(self.run_manager, "redis", None):
+                redis_type = type(self.run_manager.redis).__name__.lower()
+                if "fake" in redis_type or "fakeredis" in str(type(self.run_manager.redis)):
+                    is_fake = True
+            if is_fake:
+                logger.info(
+                    "In-memory FakeRedis active without external worker; running in embedded mode",
+                    run_id=run_id,
+                )
+                effective_mode = "embedded"
+
         # When running in decoupled mode, enqueue job payload onto Redis queue
         # for background worker execution (<10ms).
         if effective_mode == "decoupled":

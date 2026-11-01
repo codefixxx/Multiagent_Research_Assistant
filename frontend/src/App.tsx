@@ -177,7 +177,13 @@ export function App() {
     targetFocusMode: string = focusMode,
     isHitlEnabled: boolean = hitlEnabled
   ) => {
-    if (requireByok && !activeApiKeys?.gemini) {
+    const hasAnyKey =
+      activeApiKeys &&
+      (activeApiKeys.gemini ||
+        activeApiKeys.groq ||
+        activeApiKeys.openai ||
+        activeApiKeys.anthropic);
+    if (requireByok && !hasAnyKey) {
       setIsSettingsOpen(true);
       return;
     }

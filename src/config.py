@@ -129,8 +129,8 @@ class Settings(BaseSettings):
 
     # Distributed Worker Configuration
     WORKER_MODE: Literal["decoupled", "embedded"] = Field(
-        default="decoupled",
-        description="Execution mode: 'decoupled' enqueues to Redis queue; 'embedded' runs in-process.",
+        default="embedded",
+        description="Execution mode: 'embedded' runs in-process (recommended for single-server/Render/free tier); 'decoupled' enqueues to Redis queue.",
         validation_alias=AliasChoices("WORKER_MODE", "worker_mode"),
     )
     WORKER_CONCURRENCY: int = Field(
