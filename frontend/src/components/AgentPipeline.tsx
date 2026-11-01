@@ -21,9 +21,10 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
   const isAwaiting = isAwaitingApproval || status === 'awaiting_approval';
   const isCancelled = status === 'cancelled';
   const isDoneAll = status === 'completed' || status === 'budget_exceeded';
+  const isFailed = status === 'failed';
 
   // Planning is only active while formulating the initial plan
-  const isPlanningActive = !isCancelled && !isAwaiting && (
+  const isPlanningActive = !isCancelled && !isFailed && !isAwaiting && (
     (status === 'planning' || status === 'queued' || status === 'pending') &&
     plannerState !== 'completed'
   );
@@ -35,8 +36,8 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
     isDoneAll
   );
 
-  // Web research can NEVER be active while waiting for plan approval or while still planning
-  const isResearchActive = !isCancelled && !isAwaiting && !isPlanningActive && (
+  // Web research can NEVER be active while waiting for plan approval, while still planning, or if cancelled/failed
+  const isResearchActive = !isCancelled && !isFailed && !isAwaiting && !isPlanningActive && (
     status === 'researching' ||
     workers.some(w => w.status === 'active' || w.status === 'revision')
   );
@@ -50,19 +51,46 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
     isDoneAll
   );
 
+  const isConsolidatorActive = !isCancelled && !isFailed && !isAwaiting && consolidatorState === 'active';
+  const isConsolidatorDone = !isCancelled && !isAwaiting && (
+    consolidatorState === 'completed' ||
+    writerState === 'active' ||
+    writerState === 'completed' ||
+    status === 'writing' ||
+    isDoneAll
+  );
+
+  const isWriterActive = !isCancelled && !isFailed && !isAwaiting && writerState === 'active';
+  const isWriterDone = !isCancelled && !isAwaiting && (writerState === 'completed' || isDoneAll);
+
+  // Determine which step encountered the terminal error
+  const failedStepIndex = isFailed
+    ? !isPlanningDone
+      ? 1
+      : !isResearchDone
+      ? 2
+      : !isConsolidatorDone
+      ? 3
+      : 4
+    : -1;
+
   const steps = [
     {
       num: '1',
       title: 'Planning',
-      desc: isAwaiting
-        ? 'Plan formulated — awaiting review'
-        : isCancelled
+      desc: isCancelled
         ? 'Planning phase completed'
+        : failedStepIndex === 1
+        ? 'Failed during strategy formulation'
+        : isAwaiting
+        ? 'Plan formulated — awaiting review'
         : isPlanningDone
         ? 'Research strategy formulated'
         : 'Formulating search strategy',
       state: isCancelled
         ? 'cancelled'
+        : failedStepIndex === 1
+        ? 'failed'
         : isAwaiting
         ? 'awaiting'
         : isPlanningActive
@@ -76,6 +104,12 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
       title: 'Searching Web',
       desc: isCancelled
         ? 'Cancelled before retrieval'
+        : failedStepIndex === 2
+        ? workers.length > 0
+          ? `Halted during inquiry (${workers.length} topics)`
+          : 'Halted during web inquiry'
+        : failedStepIndex === 1
+        ? 'Halted before web retrieval'
         : isAwaiting
         ? 'Awaiting plan approval'
         : workers.length > 0
@@ -85,9 +119,9 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
         : 'Gathering web sources',
       state: isCancelled
         ? 'cancelled'
-        : isAwaiting
-        ? 'waiting'
-        : isPlanningActive
+        : failedStepIndex === 2
+        ? 'failed'
+        : isAwaiting || isPlanningActive || failedStepIndex === 1
         ? 'waiting'
         : isResearchActive
         ? 'active'
@@ -98,22 +132,50 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
     {
       num: '3',
       title: 'Verifying Facts',
-      desc: isCancelled ? 'Cancelled before verification' : 'Cross-checking source claims',
+      desc: isCancelled
+        ? 'Cancelled before verification'
+        : failedStepIndex === 3
+        ? 'Failed during verification'
+        : failedStepIndex > 0 && failedStepIndex < 3
+        ? 'Halted before verification'
+        : 'Cross-checking source claims',
       state: isCancelled
         ? 'cancelled'
+        : failedStepIndex === 3
+        ? 'failed'
+        : failedStepIndex > 0 && failedStepIndex < 3
+        ? 'waiting'
         : isAwaiting || isPlanningActive || (isResearchActive && !isResearchDone)
         ? 'waiting'
-        : consolidatorState,
+        : isConsolidatorActive
+        ? 'active'
+        : isConsolidatorDone
+        ? 'completed'
+        : 'waiting',
     },
     {
       num: '4',
       title: 'Writing Report',
-      desc: isCancelled ? 'Cancelled before synthesis' : 'Synthesizing final document',
+      desc: isCancelled
+        ? 'Cancelled before synthesis'
+        : failedStepIndex === 4
+        ? 'Failed during synthesis'
+        : failedStepIndex > 0 && failedStepIndex < 4
+        ? 'Halted before synthesis'
+        : 'Synthesizing final document',
       state: isCancelled
         ? 'cancelled'
-        : isAwaiting || isPlanningActive || !isResearchDone || consolidatorState === 'active'
+        : failedStepIndex === 4
+        ? 'failed'
+        : failedStepIndex > 0 && failedStepIndex < 4
         ? 'waiting'
-        : writerState,
+        : isAwaiting || isPlanningActive || !isResearchDone || isConsolidatorActive
+        ? 'waiting'
+        : isWriterActive
+        ? 'active'
+        : isWriterDone
+        ? 'completed'
+        : 'waiting',
     },
   ];
 
@@ -128,6 +190,8 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
           <span className="text-[#8a8c92] text-xs">
             {isCancelled
               ? '⛔ Investigation cancelled by user'
+              : isFailed
+              ? '⚠️ Investigation halted due to execution error'
               : isAwaiting
               ? '🎯 Plan formulated — review & steering required to proceed'
               : writerState === 'completed'
@@ -149,6 +213,7 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
           {steps.map((step) => {
             const isStepAwaiting = step.state === 'awaiting';
             const isStepCancelled = step.state === 'cancelled';
+            const isStepFailed = step.state === 'failed';
             const isActive = step.state === 'active';
             const isCompleted = step.state === 'completed';
 
@@ -156,7 +221,9 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
               <div
                 key={step.num}
                 className={`p-3.5 rounded-md border transition-colors ${
-                  isStepAwaiting
+                  isStepFailed
+                    ? 'bg-[#171719] border-[#e5566f]/40 border-b-2'
+                    : isStepAwaiting
                     ? 'bg-[#171719] border-[#d9a441] border-b-2'
                     : isStepCancelled
                     ? 'bg-[#171719] border-[#1b1a1f] opacity-60'
@@ -171,7 +238,12 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
                   <span className="text-xs text-[#8a8c92] tabular">
                     Step {step.num}
                   </span>
-                  {isStepAwaiting ? (
+                  {isStepFailed ? (
+                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#3b181e] text-[#e5566f] border border-[#e5566f]/30">
+                      <XCircle className="w-3 h-3 text-[#e5566f]" />
+                      <span>Failed</span>
+                    </span>
+                  ) : isStepAwaiting ? (
                     <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-xs font-medium bg-[#d9a441]/20 text-[#d9a441] border border-[#d9a441]/30">
                       <span>Reviewing Plan</span>
                     </span>
@@ -214,10 +286,10 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
               {workers.map((worker) => (
                 <div
                   key={worker.id}
-                  className="px-3.5 py-2 rounded-md bg-[#171719] border border-[#222224] flex items-center justify-between text-xs"
+                  className={`px-3.5 py-2 rounded-md bg-[#171719] border ${isFailed ? 'border-[#e5566f]/25 opacity-75' : 'border-[#222224]'} flex items-center justify-between text-xs`}
                 >
                   <span className="text-white/90 truncate pr-3">{worker.text}</span>
-                  <span className="text-xs text-[#4a8ad6] shrink-0 font-medium tabular">
+                  <span className={`text-xs ${isFailed ? 'text-[#e5566f]/80' : 'text-[#4a8ad6]'} shrink-0 font-medium tabular`}>
                     {worker.findingsCount} facts found
                   </span>
                 </div>

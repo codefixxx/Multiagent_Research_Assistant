@@ -346,6 +346,13 @@ export function useResearchStream() {
             clearInterval(pollIntervalRef.current);
             pollIntervalRef.current = null;
           }
+          setPlannerState(prev => prev === 'active' ? 'waiting' : prev);
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          setSubQuestions(prev => prev.map(w => ({
+            ...w,
+            status: w.status === 'active' || w.status === 'revision' ? 'waiting' : w.status
+          })));
           setJobData(prev => ({
             run_id: currentRunId || (prev?.run_id ?? ''),
             status: 'failed',
@@ -432,6 +439,13 @@ export function useResearchStream() {
           setIsDispatching(false);
           stopTimer();
           setJobData(data);
+          setPlannerState(prev => prev === 'active' ? 'waiting' : prev);
+          setConsolidatorState('waiting');
+          setWriterState('waiting');
+          setSubQuestions(prev => prev.map(w => ({
+            ...w,
+            status: w.status === 'active' || w.status === 'revision' ? 'waiting' : w.status
+          })));
           if (data.error_message) {
             appendLog('SYSTEM', `Run failed: ${data.error_message}`, 'error');
           }
@@ -716,6 +730,7 @@ export function useResearchStream() {
         if (data.plan?.sub_questions && Array.isArray(data.plan.sub_questions)) {
           const isDone = data.status === 'completed' || data.status === 'budget_exceeded' || data.status === 'writing';
           const isCancelled = data.status === 'cancelled';
+          const isFailed = data.status === 'failed';
           const isAwaiting = data.status === 'awaiting_approval';
           setSubQuestions(prev => {
             const prevCounts = new Map(prev.map(w => [w.id, w.findingsCount]));
@@ -729,7 +744,7 @@ export function useResearchStream() {
               return {
                 id,
                 text: q.question,
-                status: isDone ? 'completed' : isCancelled ? 'waiting' : isAwaiting ? 'waiting' : 'active',
+                status: isDone ? 'completed' : (isCancelled || isFailed || isAwaiting) ? 'waiting' : 'active',
                 findingsCount: count
               };
             });
@@ -773,9 +788,13 @@ export function useResearchStream() {
           setWriterState('waiting');
           loadTrace(runId);
         } else if (data.status === 'failed') {
-          setPlannerState('waiting');
+          setPlannerState(prev => prev === 'active' ? 'waiting' : prev);
           setConsolidatorState('waiting');
           setWriterState('waiting');
+          setSubQuestions(prev => prev.map(w => ({
+            ...w,
+            status: w.status === 'active' || w.status === 'revision' ? 'waiting' : w.status
+          })));
           loadTrace(runId);
         }
       }

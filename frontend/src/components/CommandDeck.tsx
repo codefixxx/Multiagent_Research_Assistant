@@ -87,6 +87,11 @@ export const CommandDeck: React.FC<CommandDeckProps> = ({
                   <Loader2 className="w-4 h-4 animate-spin" />
                   <span>Researching...</span>
                 </>
+              ) : status === 'failed' ? (
+                <>
+                  <RotateCcw className="w-4 h-4 text-[#e5566f]" />
+                  <span>Retry Research</span>
+                </>
               ) : status === 'cancelled' ? (
                 <>
                   <RotateCcw className="w-4 h-4 text-[#d9a441]" />

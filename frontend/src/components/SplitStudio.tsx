@@ -460,6 +460,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
         {(() => {
           const isFinished = jobData?.status === 'completed' || jobData?.status === 'budget_exceeded';
           const isCancelled = jobData?.status === 'cancelled';
+          const isFailed = jobData?.status === 'failed' || status === 'failed';
           const grade = isFinished ? (ragScore?.grade || ragScore?.composite_grade || null) : null;
           const groundednessPct = isFinished && ragScore ? Math.round((ragScore.groundedness_score ?? 0) * 100) : null;
           const precisionPct = isFinished && ragScore ? Math.round((ragScore.citation_precision ?? ragScore.citation_precision_score ?? 0) * 100) : null;
@@ -475,13 +476,15 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                 <span className={`px-2.5 py-0.5 rounded text-[13px] font-medium ${
                   isCancelled
                     ? 'bg-[#212023] text-[#8a8c92]'
+                    : isFailed
+                    ? 'bg-[#2b161b] text-[#e5566f] border border-[#e5566f]/30'
                     : grade === 'A+' || grade === 'A'
                     ? 'bg-[#1b2828] text-[#5fc39c] border border-[#44a282]/30'
                     : grade
                     ? 'bg-[#212023] text-[#4a8ad6] border border-[#4a8ad6]/30'
                     : 'bg-[#212023] text-[#8a8c92]'
                 }`}>
-                  {isCancelled ? 'Cancelled' : grade ? `Grade ${grade}` : 'Pending'}
+                  {isCancelled ? 'Cancelled' : isFailed ? 'Halted' : grade ? `Grade ${grade}` : 'Pending'}
                 </span>
               </div>
 
@@ -641,6 +644,12 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                   <span>Cancelled</span>
                 </span>
               )}
+              {(jobData?.status === 'failed' || status === 'failed') && (
+                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-xs font-medium bg-[#e5566f]/20 text-[#e5566f] border border-[#e5566f]/30">
+                  <XCircle className="w-3 h-3 text-[#e5566f]" />
+                  <span>Failed</span>
+                </span>
+              )}
               {jobData?.focus_mode && jobData.focus_mode !== 'general' && (
                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#8a5cf6]/15 text-[#a78bfa] border border-[#8a5cf6]/30">
                   {jobData.focus_mode === 'academic' && '🎓 Academic'}
@@ -757,7 +766,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                     </div>
                   </div>
                 </div>
-              ) : jobData?.status === 'failed' || jobData?.error_message ? (
+              ) : (jobData?.status === 'failed' || status === 'failed' || jobData?.error_message) ? (
                 <div className="py-8 px-4 max-w-xl mx-auto space-y-4 animate-in fade-in duration-200">
                   {/* Actionable Error Card Container */}
                   <div className={`p-5 sm:p-6 rounded-lg border ${errorTheme.card}`}>
@@ -778,10 +787,10 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
                             {errorTitle}
                           </h3>
                           <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium ${errorTheme.badge}`}>
-                            {jobData.error_code || errorTheme.defaultCode}
+                            {jobData?.error_code || errorTheme.defaultCode}
                           </span>
                         </div>
-                        {jobData.query && (
+                        {jobData?.query && (
                           <p className="text-xs text-[#8a8c92] mt-1 line-clamp-1">
                             Investigation: &quot;{jobData.query}&quot;
                           </p>
@@ -791,11 +800,11 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
 
                     {/* Explanatory Message */}
                     <div className="bg-[#131217] p-3.5 rounded-md border border-[#222224] text-xs text-white/90 leading-relaxed mb-3">
-                      {jobData.error_message || 'The research execution encountered an unexpected error.'}
+                      {jobData?.error_message || 'The research execution encountered an unexpected error.'}
                     </div>
 
                     {/* Actionable Solution Note */}
-                    {jobData.error_suggestion && (
+                    {jobData?.error_suggestion && (
                       <div className="flex items-start space-x-2 text-xs text-[#8a8c92] mb-4 bg-white/5 p-3 rounded border border-white/10 leading-relaxed">
                         <span className="text-[#4a8ad6] shrink-0 font-bold">Suggested Fix:</span>
                         <span className="text-white/80">{jobData.error_suggestion}</span>
