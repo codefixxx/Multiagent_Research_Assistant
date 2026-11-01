@@ -65,6 +65,56 @@ flowchart TD
 
 ---
 
+## Screenshot Gallery
+
+The project includes six core product views that map to the key operational phases of the research lifecycle. These images are organized to emphasize product UX, agent coordination, verification quality, and operational observability.
+
+### 1) Product Dashboard & Control Plane
+![Dashboard overview](docs/screenshots/01-dashboard-overview.png)
+
+- Main orchestration landing view
+- Request intake and prompt controls
+- Live status indicators and job lifecycle monitoring
+
+### 2) Research Planning Workflow
+![Research planner](docs/screenshots/02-research-plan.png)
+
+- Planner decomposes the user query into sub-questions
+- Search intent is shaped before evidence gathering begins
+- Budget and objective constraints are surfaced early
+
+### 3) Evidence Gathering & Deep Research
+![Evidence collection](docs/screenshots/03-evidence-gathering.png)
+
+- Search + webpage scraping pipeline in action
+- Source findings logged with target URLs and timestamps
+- Researcher pipeline runs across multiple sub-questions
+
+### 4) Citation Validation & Report Quality
+![Citation validation](docs/screenshots/04-citation-validation.png)
+
+- Canonical claim verification before publication
+- Citation integrity checks and hallucination guardrails
+- Final report compliance passed before delivery
+
+### 5) Trace / Audit / Observability View
+![Audit trace](docs/screenshots/05-trace-audit.png)
+
+- Granular execution trace with latency and token telemetry
+- Per-agent runtime diagnostics and intermediate outputs
+- SSE stream and audit log visibility for debugging
+
+### 6) Deployment / Production Configuration
+![Deployment config](docs/screenshots/06-deployment-config.png)
+
+- Redis-backed persistence layer and worker configuration
+- Cloud deployment patterns and environment setup
+- Production-grade operational profile and scaling assumptions
+
+> Screenshot files should be placed in `docs/screenshots/` using the names above so the gallery renders cleanly in GitHub-hosted Markdown.
+
+---
+
 ## Agent Specialists
 
 | Specialist Agent | Responsibility | Guarantee & Constraints |
