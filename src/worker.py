@@ -35,6 +35,7 @@ class ResearchWorker:
         self._running = False
         self._active_tasks: set[asyncio.Task[Any]] = set()
         self._heartbeat_task: asyncio.Task[None] | None = None
+        self._http_server: asyncio.Server | None = None
 
     async def initialize(self) -> None:
         """Initialize Redis connection, job service, queue, and event broadcaster."""
@@ -55,6 +56,32 @@ class ResearchWorker:
             worker_id=self.worker_id,
             concurrency=self.concurrency,
         )
+
+        # Optional health probe server when deployed as a free cloud Web Service (Render/Koyeb)
+        port = int(os.environ.get("PORT", 0) or 0)
+        if port > 0:
+
+            async def _handle_http(
+                reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+            ) -> None:
+                try:
+                    await reader.read(512)
+                    response = (
+                        b"HTTP/1.1 200 OK\r\n"
+                        b"Content-Type: application/json\r\n"
+                        b"Content-Length: 35\r\n"
+                        b"Connection: close\r\n\r\n"
+                        b'{"status":"healthy","role":"worker"}'
+                    )
+                    writer.write(response)
+                    await writer.drain()
+                except Exception:
+                    pass
+                finally:
+                    writer.close()
+
+            self._http_server = await asyncio.start_server(_handle_http, "0.0.0.0", port)
+            logger.info("Worker health probe server listening", port=port)
 
         # Start periodic worker heartbeat in Redis
         self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
@@ -198,6 +225,13 @@ class ResearchWorker:
         """Gracefully drain running jobs and deregister worker."""
         self._running = False
         logger.info("Shutting down research worker...", worker_id=self.worker_id)
+        if self._http_server:
+            self._http_server.close()
+            try:
+                await self._http_server.wait_closed()
+            except Exception:
+                pass
+
         if self._heartbeat_task and not self._heartbeat_task.done():
             self._heartbeat_task.cancel()
 
