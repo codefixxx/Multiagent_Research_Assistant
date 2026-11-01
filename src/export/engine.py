@@ -15,6 +15,7 @@ import io
 from datetime import UTC, datetime
 from enum import StrEnum
 
+from src.config import settings
 from src.core.logger import logger
 from src.schemas.api import ResearchStatusResponse
 
@@ -510,18 +511,25 @@ class ReportExportEngine:
         logger.info("Generating PDF report via Playwright", run_id=status_resp.run_id)
 
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
-            )
-            page = await browser.new_page()
-            await page.set_content(html_content, wait_until="networkidle")
-            pdf_bytes = await page.pdf(
-                format="A4",
-                print_background=True,
-                margin={"top": "1.5cm", "bottom": "1.5cm", "left": "1.5cm", "right": "1.5cm"},
-            )
-            await browser.close()
+            if settings.PLAYWRIGHT_WS_ENDPOINT:
+                endpoint_preview = settings.PLAYWRIGHT_WS_ENDPOINT.split("?")[0]
+                logger.info("Connecting to remote Playwright browser over CDP for PDF export", endpoint=endpoint_preview)
+                browser = await p.chromium.connect_over_cdp(settings.PLAYWRIGHT_WS_ENDPOINT)
+            else:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+                )
+            try:
+                page = await browser.new_page()
+                await page.set_content(html_content, wait_until="networkidle")
+                pdf_bytes = await page.pdf(
+                    format="A4",
+                    print_background=True,
+                    margin={"top": "1.5cm", "bottom": "1.5cm", "left": "1.5cm", "right": "1.5cm"},
+                )
+            finally:
+                await browser.close()
 
         logger.info(
             "PDF report generated successfully",

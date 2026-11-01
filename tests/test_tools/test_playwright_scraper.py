@@ -222,6 +222,47 @@ async def test_playwright_timeout_handling():
         assert doc.tier == "tier3_playwright"
 
 
+@pytest.mark.asyncio
+async def test_playwright_remote_browser_connect_over_cdp():
+    """Verify PlaywrightScraperClient uses connect_over_cdp when ws_endpoint is supplied."""
+    mock_browser = AsyncMock()
+    mock_context = AsyncMock()
+    mock_page = AsyncMock()
+    mock_response = AsyncMock()
+    mock_response.status = 200
+
+    mock_page.goto.return_value = mock_response
+    mock_page.title.return_value = "Remote Rendered Page"
+    mock_page.content.return_value = "<html><body>Dynamic remote content</body></html>"
+    mock_page.evaluate.return_value = "Dynamic remote content with sufficient length."
+
+    mock_context.new_page.return_value = mock_page
+    mock_browser.new_context.return_value = mock_context
+
+    mock_chromium = MagicMock()
+    mock_chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+    mock_chromium.launch = AsyncMock()
+
+    mock_playwright_instance = MagicMock()
+    mock_playwright_instance.chromium = mock_chromium
+
+    mock_pw_cm = AsyncMock()
+    mock_pw_cm.__aenter__.return_value = mock_playwright_instance
+    mock_pw_cm.__aexit__.return_value = None
+
+    remote_ws = "wss://chrome.browserless.io?token=test_token_123"
+
+    with patch("playwright.async_api.async_playwright", return_value=mock_pw_cm):
+        client = PlaywrightScraperClient(ws_endpoint=remote_ws)
+        doc = await client.read_url("https://example.com/dynamic")
+
+        mock_chromium.connect_over_cdp.assert_called_once_with(remote_ws)
+        mock_chromium.launch.assert_not_called()
+        assert doc.status == ExtractionStatus.SUCCESS
+        assert doc.tier == "tier3_playwright"
+        assert "remote content" in doc.raw_text.lower()
+
+
 # =====================================================================
 # Cascade Tests for DeepPageScraper 3-Tier Architecture
 # Tier 1 (httpx) -> Tier 2 (Jina Reader) -> Tier 3 (Playwright Stealth)

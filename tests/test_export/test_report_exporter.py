@@ -2,6 +2,7 @@
 
 import io
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import docx
 import pytest
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from src.api.job_runner import job_service
 from src.api.main import app
+from src.config import settings
 from src.core.telemetry import RunCostSummary
 from src.export.engine import ReportExportEngine
 from src.schemas.api import ResearchStatusResponse
@@ -160,6 +162,35 @@ async def test_export_pdf(sample_status_response: ResearchStatusResponse):
         if "Executable doesn't exist" in str(exc) or "playwright install" in str(exc):
             pytest.skip(f"Playwright chromium browser not installed: {exc}")
         raise
+
+
+@pytest.mark.asyncio
+async def test_export_pdf_remote_cdp(sample_status_response: ResearchStatusResponse, monkeypatch):
+    """Test PDF generation routes via connect_over_cdp when PLAYWRIGHT_WS_ENDPOINT is set."""
+    mock_browser = AsyncMock()
+    mock_page = AsyncMock()
+    mock_page.pdf.return_value = b"%PDF-1.4 Mock Remote PDF Bytes"
+    mock_browser.new_page.return_value = mock_page
+
+    mock_chromium = MagicMock()
+    mock_chromium.connect_over_cdp = AsyncMock(return_value=mock_browser)
+    mock_chromium.launch = AsyncMock()
+
+    mock_playwright_instance = MagicMock()
+    mock_playwright_instance.chromium = mock_chromium
+
+    mock_pw_cm = AsyncMock()
+    mock_pw_cm.__aenter__.return_value = mock_playwright_instance
+    mock_pw_cm.__aexit__.return_value = None
+
+    remote_endpoint = "wss://chrome.browserless.io?token=test_pdf_token"
+    monkeypatch.setattr(settings, "PLAYWRIGHT_WS_ENDPOINT", remote_endpoint)
+
+    with patch("playwright.async_api.async_playwright", return_value=mock_pw_cm):
+        pdf_bytes = await ReportExportEngine.export_pdf(sample_status_response)
+        mock_chromium.connect_over_cdp.assert_called_once_with(remote_endpoint)
+        mock_chromium.launch.assert_not_called()
+        assert pdf_bytes.startswith(b"%PDF-1.4")
 
 
 @pytest.mark.asyncio

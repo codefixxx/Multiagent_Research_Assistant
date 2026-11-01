@@ -103,6 +103,14 @@ class Settings(BaseSettings):
         default=True,
         description="Whether to run Playwright in headless mode.",
     )
+    PLAYWRIGHT_WS_ENDPOINT: str | None = Field(
+        default=None,
+        description=(
+            "Remote WebSocket endpoint for Playwright (e.g. wss://chrome.browserless.io?token=YOUR_API_KEY "
+            "or ws://localhost:3000). When configured, Playwright connects over CDP to this remote browser "
+            "instead of launching a local Chromium process, keeping application containers lean (~150MB)."
+        ),
+    )
 
     # Developer Community / Hacker News Configuration
     ENABLE_HACKER_NEWS: bool = Field(

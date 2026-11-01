@@ -24,10 +24,12 @@ class PlaywrightScraperClient:
         max_words: int | None = None,
         headless: bool | None = None,
         user_agent: str | None = None,
+        ws_endpoint: str | None = None,
     ) -> None:
         self.timeout = timeout or settings.PLAYWRIGHT_TIMEOUT_SECONDS
         self.max_words = max_words or settings.SCRAPER_MAX_WORDS_PER_PAGE
         self.headless = headless if headless is not None else settings.PLAYWRIGHT_HEADLESS
+        self.ws_endpoint = ws_endpoint or settings.PLAYWRIGHT_WS_ENDPOINT
         self.user_agent = user_agent or (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -82,15 +84,20 @@ class PlaywrightScraperClient:
 
         try:
             async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=self.headless,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-blink-features=AutomationControlled",
-                    ],
-                )
+                if self.ws_endpoint:
+                    endpoint_preview = self.ws_endpoint.split("?")[0]
+                    logger.info("Connecting to remote Playwright browser over CDP", endpoint=endpoint_preview)
+                    browser = await p.chromium.connect_over_cdp(self.ws_endpoint)
+                else:
+                    browser = await p.chromium.launch(
+                        headless=self.headless,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-setuid-sandbox",
+                            "--disable-dev-shm-usage",
+                            "--disable-blink-features=AutomationControlled",
+                        ],
+                    )
                 try:
                     context = await browser.new_context(
                         viewport={"width": 1920, "height": 1080},
