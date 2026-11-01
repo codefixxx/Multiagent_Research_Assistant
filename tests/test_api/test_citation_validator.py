@@ -237,4 +237,3 @@ def test_validator_handles_grouped_citations(sample_findings):
     assert len(result.orphaned_citations) == 0
     assert "cite_1" in result.verified_citations
     assert "cite_2" in result.verified_citations
-
