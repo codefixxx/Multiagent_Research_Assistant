@@ -1,4 +1,4 @@
-import type { SubQuestionItem, JobStatus } from '../types';
+import type { SubQuestionItem, JobStatus, ResearchJobData } from '../types';
 import { CheckCircle2, Loader2, Clock, XCircle } from 'lucide-react';
 
 interface AgentPipelineProps {
@@ -8,6 +8,7 @@ interface AgentPipelineProps {
   workers: SubQuestionItem[];
   isAwaitingApproval?: boolean;
   status?: JobStatus;
+  jobData?: ResearchJobData | null;
 }
 
 export const AgentPipeline: React.FC<AgentPipelineProps> = ({
@@ -16,12 +17,13 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
   writerState,
   workers,
   isAwaitingApproval = false,
-  status = 'idle'
+  status = 'idle',
+  jobData = null
 }) => {
   const isAwaiting = isAwaitingApproval || status === 'awaiting_approval';
   const isCancelled = status === 'cancelled';
   const isDoneAll = status === 'completed' || status === 'budget_exceeded';
-  const isFailed = status === 'failed';
+  const isFailed = status === 'failed' || jobData?.status === 'failed' || Boolean(jobData?.error_message);
 
   // Planning is only active while formulating the initial plan
   const isPlanningActive = !isCancelled && !isFailed && !isAwaiting && (
@@ -290,7 +292,7 @@ export const AgentPipeline: React.FC<AgentPipelineProps> = ({
                 >
                   <span className="text-white/90 truncate pr-3">{worker.text}</span>
                   <span className={`text-xs ${isFailed ? 'text-[#e5566f]/80' : 'text-[#4a8ad6]'} shrink-0 font-medium tabular`}>
-                    {worker.findingsCount} facts found
+                    {isFailed ? `${worker.findingsCount} facts (Halted)` : `${worker.findingsCount} facts found`}
                   </span>
                 </div>
               ))}

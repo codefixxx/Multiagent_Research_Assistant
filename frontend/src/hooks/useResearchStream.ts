@@ -127,6 +127,44 @@ export function useResearchStream() {
 
       setSuperstepsCount(prev => prev + 1);
 
+      const isJobFailed = evtName === 'job_failed' || payload.status === 'failed' || Boolean(payload.error_message);
+
+      if (isJobFailed) {
+        setStatus('failed');
+        setIsDispatching(false);
+        stopTimer();
+        if (eventSourceRef.current) {
+          eventSourceRef.current.close();
+          eventSourceRef.current = null;
+        }
+        if (pollIntervalRef.current) {
+          clearInterval(pollIntervalRef.current);
+          pollIntervalRef.current = null;
+        }
+        setPlannerState(prev => prev === 'active' ? 'waiting' : prev);
+        setConsolidatorState('waiting');
+        setWriterState('waiting');
+        setSubQuestions(prev => prev.map(w => ({
+          ...w,
+          status: 'waiting'
+        })));
+        setJobData(prev => ({
+          run_id: currentRunId || (prev?.run_id ?? ''),
+          status: 'failed',
+          query: prev?.query ?? '',
+          report: null,
+          error_message: payload.error || payload.error_message || 'Execution encountered an error',
+          error_code: payload.code || payload.error_code,
+          error_suggestion: payload.suggestion || payload.error_suggestion,
+          error_details: payload.details || payload.error_details,
+        }));
+        appendLog('SYSTEM', `Run failed: ${payload.error || payload.error_message || 'Execution encountered an error'}`, 'error');
+        if (payload.suggestion || payload.error_suggestion) {
+          appendLog('SYSTEM', `💡 Actionable fix: ${payload.suggestion || payload.error_suggestion}`, 'system');
+        }
+        return;
+      }
+
       switch (evtName) {
         case 'job_started':
           setStatus('planning');
@@ -432,19 +470,28 @@ export function useResearchStream() {
         if (!res.ok) return;
         const data: ResearchJobData = await res.json();
         
-        if (data.status === 'failed') {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          if (eventSourceRef.current) eventSourceRef.current.close();
+        if (data.status === 'failed' || Boolean(data.error_message)) {
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
           setStatus('failed');
           setIsDispatching(false);
           stopTimer();
-          setJobData(data);
+          setJobData({
+            ...data,
+            status: 'failed',
+          });
           setPlannerState(prev => prev === 'active' ? 'waiting' : prev);
           setConsolidatorState('waiting');
           setWriterState('waiting');
           setSubQuestions(prev => prev.map(w => ({
             ...w,
-            status: w.status === 'active' || w.status === 'revision' ? 'waiting' : w.status
+            status: 'waiting'
           })));
           if (data.error_message) {
             appendLog('SYSTEM', `Run failed: ${data.error_message}`, 'error');
@@ -452,9 +499,16 @@ export function useResearchStream() {
           if (data.error_suggestion) {
             appendLog('SYSTEM', `💡 Actionable fix: ${data.error_suggestion}`, 'system');
           }
+          return;
         } else if (data.status === 'cancelled') {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          if (eventSourceRef.current) eventSourceRef.current.close();
+          if (pollIntervalRef.current) {
+            clearInterval(pollIntervalRef.current);
+            pollIntervalRef.current = null;
+          }
+          if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+          }
           setStatus('cancelled');
           setIsDispatching(false);
           stopTimer();
@@ -463,6 +517,7 @@ export function useResearchStream() {
           setWriterState('waiting');
           setSubQuestions(prev => prev.map(w => ({ ...w, status: 'waiting' })));
           appendLog('SYSTEM', 'Investigation cancelled by user', 'system');
+          return;
         } else if (data.status === 'completed' || data.status === 'budget_exceeded') {
           if (data.report && (data.report.title || data.report.markdown_output)) {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -719,8 +774,10 @@ export function useResearchStream() {
       if (!res.ok) return;
       const data: ResearchJobData = await res.json();
       if (data && data.run_id) {
-        setJobData(data);
-        setStatus(data.status);
+        const isFailedRun = data.status === 'failed' || Boolean(data.error_message);
+        const effectiveData = isFailedRun ? { ...data, status: 'failed' as JobStatus } : data;
+        setJobData(effectiveData);
+        setStatus(effectiveData.status);
         setFindingsCount(data.findings_count || 0);
         setCitationsCount(data.citations_count || 0);
         setCostSummary(data.cost_summary || null);
@@ -730,7 +787,7 @@ export function useResearchStream() {
         if (data.plan?.sub_questions && Array.isArray(data.plan.sub_questions)) {
           const isDone = data.status === 'completed' || data.status === 'budget_exceeded' || data.status === 'writing';
           const isCancelled = data.status === 'cancelled';
-          const isFailed = data.status === 'failed';
+          const isFailed = isFailedRun;
           const isAwaiting = data.status === 'awaiting_approval';
           setSubQuestions(prev => {
             const prevCounts = new Map(prev.map(w => [w.id, w.findingsCount]));

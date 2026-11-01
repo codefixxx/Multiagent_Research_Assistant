@@ -8,7 +8,7 @@ import { CitationPopover } from './components/CitationPopover';
 import { SettingsDrawer } from './components/SettingsDrawer';
 import { TraceDrawer } from './components/TraceDrawer';
 import { HistoryDrawer } from './components/HistoryDrawer';
-import type { Citation, ModelMatrix, ApiKeys } from './types';
+import type { Citation, ModelMatrix, ApiKeys, JobStatus } from './types';
 import { registerSessionUnloadHandler } from './utils/session';
 
 export function App() {
@@ -225,6 +225,10 @@ export function App() {
   const totalTokens = (costSummary?.total_prompt_tokens || 0) + (costSummary?.total_completion_tokens || 0);
   const totalCostUsd = costSummary?.total_cost_usd || 0;
 
+  const isFailed = status === 'failed' || jobData?.status === 'failed' || Boolean(jobData?.error_message);
+  const effectiveStatus: JobStatus = isFailed ? 'failed' : status;
+  const effectiveIsDispatching = isFailed ? false : isDispatching;
+
   return (
     <div className="min-h-screen bg-[#171719] text-white flex flex-col">
       {/* 1. Header with System Telemetry */}
@@ -232,7 +236,7 @@ export function App() {
         tokens={totalTokens}
         costUsd={totalCostUsd}
         timer={formattedTimer}
-        isDispatching={isDispatching}
+        isDispatching={effectiveIsDispatching}
         hasTrace={activeSpans.length > 0}
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTrace={() => setIsTraceOpen(true)}
@@ -243,8 +247,8 @@ export function App() {
       <div className="flex-1 flex flex-col pb-12">
         {/* Command Bar */}
         <CommandDeck
-          isDispatching={isDispatching}
-          status={status}
+          isDispatching={effectiveIsDispatching}
+          status={effectiveStatus}
           query={query}
           onQueryChange={setQuery}
           depth={depth}
@@ -267,13 +271,14 @@ export function App() {
           writerState={writerState}
           workers={subQuestions}
           isAwaitingApproval={status === 'awaiting_approval'}
-          status={status}
+          status={effectiveStatus}
+          jobData={jobData}
         />
 
         {/* Dual Canvas Studio */}
         <SplitStudio
           jobData={jobData}
-          status={status}
+          status={effectiveStatus}
           logs={logs}
           ragScore={ragScore}
           findingsCount={findingsCount}

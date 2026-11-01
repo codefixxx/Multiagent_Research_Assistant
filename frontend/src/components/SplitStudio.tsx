@@ -460,7 +460,7 @@ export const SplitStudio: React.FC<SplitStudioProps> = ({
         {(() => {
           const isFinished = jobData?.status === 'completed' || jobData?.status === 'budget_exceeded';
           const isCancelled = jobData?.status === 'cancelled';
-          const isFailed = jobData?.status === 'failed' || status === 'failed';
+          const isFailed = jobData?.status === 'failed' || status === 'failed' || Boolean(jobData?.error_message);
           const grade = isFinished ? (ragScore?.grade || ragScore?.composite_grade || null) : null;
           const groundednessPct = isFinished && ragScore ? Math.round((ragScore.groundedness_score ?? 0) * 100) : null;
           const precisionPct = isFinished && ragScore ? Math.round((ragScore.citation_precision ?? ragScore.citation_precision_score ?? 0) * 100) : null;
