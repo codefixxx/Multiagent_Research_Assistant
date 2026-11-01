@@ -513,7 +513,10 @@ class ReportExportEngine:
         async with async_playwright() as p:
             if settings.PLAYWRIGHT_WS_ENDPOINT:
                 endpoint_preview = settings.PLAYWRIGHT_WS_ENDPOINT.split("?")[0]
-                logger.info("Connecting to remote Playwright browser over CDP for PDF export", endpoint=endpoint_preview)
+                logger.info(
+                    "Connecting to remote Playwright browser over CDP for PDF export",
+                    endpoint=endpoint_preview,
+                )
                 browser = await p.chromium.connect_over_cdp(settings.PLAYWRIGHT_WS_ENDPOINT)
             else:
                 browser = await p.chromium.launch(

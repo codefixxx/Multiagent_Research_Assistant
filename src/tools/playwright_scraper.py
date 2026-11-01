@@ -86,7 +86,10 @@ class PlaywrightScraperClient:
             async with async_playwright() as p:
                 if self.ws_endpoint:
                     endpoint_preview = self.ws_endpoint.split("?")[0]
-                    logger.info("Connecting to remote Playwright browser over CDP", endpoint=endpoint_preview)
+                    logger.info(
+                        "Connecting to remote Playwright browser over CDP",
+                        endpoint=endpoint_preview,
+                    )
                     browser = await p.chromium.connect_over_cdp(self.ws_endpoint)
                 else:
                     browser = await p.chromium.launch(
